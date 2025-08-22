@@ -1,78 +1,26 @@
 body {
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #f8f9fa;
+  font-family: Arial, sans-serif;
+  padding: 20px;
   margin: 0;
-  padding: 20px;
 }
-
 .container {
-  max-width: 600px;
+  max-width: 480px;
   margin: auto;
-  background: white;
-  padding: 20px;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
-
-h1 {
-  text-align: center;
-  color: #333;
-  font-size: 24px;
-  margin-bottom: 24px;
-}
-
-select,
-input[type="text"] {
-  padding: 12px;
-  margin: 6px 0;
-  font-size: 16px;
+input, select {
   width: 100%;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  box-sizing: border-box;
-}
-
-input:focus {
-  outline: 2px solid #2a7de1;
-}
-
-button {
-  padding: 12px;
-  font-size: 16px;
-  margin: 6px 4px 12px 0;
-  background-color: #2a7de1;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  width: 48%;
-}
-
-button.secondary {
-  background-color: #6c757d;
-}
-
-button:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
-}
-
-.entry {
-  background: #f1f1f1;
-  margin: 6px 0;
+  font-size: 1.2em;
   padding: 10px;
-  border-radius: 6px;
-  font-size: 15px;
-  line-height: 1.4;
+  margin: 5px 0;
 }
-
-@media (max-width: 480px) {
-  .container {
-    padding: 12px;
-  }
-
-  button {
-    width: 100%;
-    margin: 6px 0;
-  }
+.resultados {
+  margin-top: 20px;
+}
+.botones {
+  margin-top: 20px;
+}
+button {
+  margin-right: 10px;
+  padding: 10px;
+  font-size: 1em;
 }

@@ -1,103 +1,88 @@
-// src/App.jsx
 import React, { useState } from 'react';
-import './App.css';
 import equivalencias from './equivalencias.json';
-import { saveAs } from 'file-saver';
 
-const App = () => {
+function App() {
   const [codigo, setCodigo] = useState('');
+  const [items, setItems] = useState([]);
+  const [noEncontrados, setNoEncontrados] = useState([]);
   const [piso, setPiso] = useState('PB');
   const [sector, setSector] = useState('A');
-  const [responsable, setResponsable] = useState('');
-  const [registros, setRegistros] = useState([]);
-  const [noRegistrados, setNoRegistrados] = useState([]);
+  const [responsable, setResponsable] = useState('Damian');
 
-  const handleScan = (e) => {
-    const valor = e.target.value.trim();
-    if (valor.length > 4) {
-      setCodigo('');
-      const equivalencia = equivalencias.find(eq => eq.COD === valor);
-
-      const entrada = {
-        fecha: new Date().toISOString().split('T')[0],
-        piso,
-        sector,
-        responsable,
-        codigo: valor,
-        descripcion: equivalencia ? `${equivalencia.ARTICULO} ${equivalencia.TALLE} ${equivalencia.COLOR}` : 'Equivalencia no registrada'
-      };
-
-      if (equivalencia) {
-        setRegistros([...registros, entrada]);
-      } else {
-        setNoRegistrados([...noRegistrados, entrada]);
-      }
+  const agregarCodigo = (value) => {
+    const encontrado = equivalencias.find(e => e.CODIGO === value);
+    if (encontrado) {
+      setItems(prev => [...prev, encontrado]);
     } else {
-      setCodigo(valor);
+      setNoEncontrados(prev => [...prev, value]);
     }
   };
 
-  const exportarCSV = (datos, tipo) => {
-    const filas = datos.map(row => `${row.fecha},${row.piso},${row.sector},${row.responsable},${row.codigo},${row.descripcion}`);
-    const contenido = filas.join('\n');
-    const blob = new Blob([contenido], { type: 'text/csv;charset=utf-8' });
-    const fecha = new Date().toISOString().split('T')[0];
-    const nombre = `stock_${fecha}_${piso}_${sector}_${responsable}_${tipo}.csv`;
-    saveAs(blob, nombre);
+  const handleChange = (e) => {
+    const val = e.target.value.trim();
+    setCodigo('');
+    if (val.length > 0) agregarCodigo(val);
+  };
+
+  const exportar = (data, nombre) => {
+    const contenido = data.map(d =>
+      typeof d === 'string'
+        ? d
+        : `${d.CODIGO},${d.ARTICULO},${d.TALLE},${d.COLOR}`
+    ).join('\n');
+    const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const blob = new Blob([contenido], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stock_${fecha}_${piso}_${sector}_${responsable}_${nombre}.csv`;
+    a.click();
   };
 
   return (
     <div className="container">
-      <h1>Inventario Henko Web</h1>
-
-      <div className="formulario">
-        <input
-          type="text"
-          placeholder="Código de barras"
-          value={codigo}
-          onChange={handleScan}
-          autoFocus
-        />
-        <select onChange={e => setResponsable(e.target.value)} defaultValue="">
-          <option value="">Responsable</option>
+      <h1>Inventario RIO</h1>
+      <div className="form">
+        <select onChange={(e) => setPiso(e.target.value)} value={piso}>
+          <option value="PB">PB</option>
+          <option value="P1">P1</option>
+        </select>
+        <select onChange={(e) => setSector(e.target.value)} value={sector}>
+          <option value="A">A</option>
+          <option value="B">B</option>
+        </select>
+        <select onChange={(e) => setResponsable(e.target.value)} value={responsable}>
           <option value="Damian">Damian</option>
-          <option value="Lisa">Lisa</option>
           <option value="Otro">Otro</option>
         </select>
-        <select onChange={e => setPiso(e.target.value)} value={piso}>
-          <option>PB</option>
-          <option>1</option>
-          <option>2</option>
-        </select>
-        <select onChange={e => setSector(e.target.value)} value={sector}>
-          <option>A</option>
-          <option>B</option>
-          <option>C</option>
-          <option>D</option>
-        </select>
+        <input
+          type="text"
+          placeholder="Escaneá el código"
+          autoFocus
+          value={codigo}
+          onChange={handleChange}
+        />
       </div>
-
+      <div className="resultados">
+        <h2>Registrados ({items.length})</h2>
+        <ul>
+          {items.map((item, i) => (
+            <li key={i}>{item.CODIGO} - {item.ARTICULO} - {item.TALLE} - {item.COLOR}</li>
+          ))}
+        </ul>
+        <h2>No registrados ({noEncontrados.length})</h2>
+        <ul>
+          {noEncontrados.map((item, i) => (
+            <li key={i}>{item} - Equivalencia no registrada</li>
+          ))}
+        </ul>
+      </div>
       <div className="botones">
-        <button onClick={() => exportarCSV(registros, 'registrados')}>Exportar CSV registrados</button>
-        <button onClick={() => exportarCSV(noRegistrados, 'no_registrados')}>Exportar CSV no registrados</button>
-      </div>
-
-      <div className="tabla">
-        <h3>Registros actuales</h3>
-        <ul>
-          {registros.map((r, i) => (
-            <li key={i}><strong>{r.codigo}</strong> - {r.descripcion}</li>
-          ))}
-        </ul>
-        <h3>No registrados</h3>
-        <ul>
-          {noRegistrados.map((r, i) => (
-            <li key={i}><strong>{r.codigo}</strong> - {r.descripcion}</li>
-          ))}
-        </ul>
+        <button onClick={() => exportar(items, 'registrados')}>Exportar Registrados</button>
+        <button onClick={() => exportar(noEncontrados, 'no_registrados')}>Exportar No Registrados</button>
       </div>
     </div>
   );
-};
+}
 
 export default App;
