@@ -1,12 +1,32 @@
+
 <!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Inventario RIO</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inventario RIO</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Inventario RIO</h1>
+    <form id="config-form">
+      <label for="piso">Piso:</label>
+      <input type="text" id="piso" required />
+      <label for="sector">Sector:</label>
+      <input type="text" id="sector" required />
+      <label for="responsable">Responsable:</label>
+      <input type="text" id="responsable" required />
+      <button type="submit">Comenzar</button>
+    </form>
+    <div id="scanner" style="display: none;">
+      <label for="code-input">Escaneá el código:</label>
+      <input type="text" id="code-input" autofocus />
+      <ul id="results"></ul>
+      <button id="export-registered">Exportar Registrados</button>
+      <button id="export-unregistered">Exportar No Registrados</button>
+    </div>
+  </div>
+  <script src="script.js"></script>
+</body>
 </html>
