@@ -83,8 +83,9 @@ async function loadCSV() {
   const lines = text.trim().split('\n');
 
   for (let i = 1; i < lines.length; i++) {
-    const parts = lines[i].replace(/"/g, '').split(';'); // Saca comillas y separa
-    const code = parts[0]?.trim();
+    const cleanLine = lines[i].trim().replace(/\r/g, '').replace(/"/g, '');
+    const parts = cleanLine.split(/[;,]/);  // Compatible con ; y ,
+    const code = parts[0]?.trim().replace(/\s/g, '');
     const articulo = parts[1]?.trim();
     const desc1 = parts[2]?.trim();
     const desc2 = parts[3]?.trim();
@@ -92,4 +93,5 @@ async function loadCSV() {
     if (code) equivalencias[code] = descripcion;
   }
 }
+
 
