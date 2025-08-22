@@ -15,22 +15,18 @@
     input,select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:#fff}
     .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px}
     .grid{display:grid;grid-template-columns:1fr;gap:16px}
-    .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
     .status{display:flex;gap:10px;align-items:center;margin-top:8px;font-weight:600}
     .status .ok{color:var(--ok)}
     .status .bad{color:var(--bad)}
     .pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef2f7;font-size:12px;margin-left:8px}
     .flex{display:flex;gap:10px;align-items:center}
     button{padding:10px 14px;border:0;border-radius:10px;background:var(--primary);color:#fff;font-weight:600;cursor:pointer}
-    button.secondary{background:#0f172a}
-    button.ghost{background:#eef2f7;color:#0f172a}
     table{width:100%;border-collapse:separate;border-spacing:0 8px}
     th,td{text-align:left;padding:10px 12px;background:#f8fafc}
     th{font-size:13px;color:#475569;background:#eef2ff}
     td.count{text-align:center;width:120px}
-    .actions button{padding:6px 10px}
     .section-title{display:flex;align-items:center;gap:8px;margin:20px 0 8px}
-    @media (max-width: 900px){ .topbar{grid-template-columns:1fr} .row{grid-template-columns:1fr} }
+    @media (max-width: 900px){ .topbar{grid-template-columns:1fr} }
   </style>
 </head>
 <body>
@@ -82,9 +78,8 @@
       </div>
 
       <div class="flex" style="margin:12px 0;flex-wrap:wrap;gap:8px">
-        <button id="deshacer" class="ghost">Deshacer último válido</button>
-        <button id="limpiarValidos" class="secondary">Limpiar válidos</button>
         <button id="descargarValidos">Descargar TXT válidos</button>
+        <button id="descargarInvalidos">Descargar TXT inválidos</button>
       </div>
 
       <div style="overflow:auto;margin-top:6px">
@@ -97,7 +92,6 @@
               <th>Color</th>
               <th>Talle</th>
               <th class="count">Cantidad</th>
-              <th style="width:160px">Acciones</th>
             </tr>
           </thead>
           <tbody id="tablaValidos"></tbody>
@@ -110,11 +104,6 @@
         <span class="pill" id="pillInvalidos2">0 códigos</span>
       </div>
 
-      <div class="flex" style="margin:8px 0;flex-wrap:wrap;gap:8px">
-        <button id="limpiarInvalidos" class="secondary">Limpiar inválidos</button>
-        <button id="descargarInvalidos">Descargar TXT inválidos</button>
-      </div>
-
       <div style="overflow:auto;margin-top:6px">
         <table>
           <thead>
@@ -122,7 +111,6 @@
               <th style="width:72px">#</th>
               <th>Código</th>
               <th class="count">Cantidad</th>
-              <th style="width:160px">Acciones</th>
             </tr>
           </thead>
           <tbody id="tablaInvalidos"></tbody>
@@ -137,7 +125,6 @@
     // Válidos
     let picks = [];                // historial (normalizado) con repetidos
     let counts = new Map();        // code -> cantidad
-    let ultimoValido = null;
 
     // Inválidos
     let invalidPicks = [];         // historial inválidos (normalizado) con repetidos
@@ -197,11 +184,6 @@
           <td>${info.color}</td>
           <td>${info.talle}</td>
           <td class="count">${qty}</td>
-          <td class="actions">
-            <button data-code="${code}" data-act="menosV" class="ghost">-1</button>
-            <button data-code="${code}" data-act="masV" class="ghost">+1</button>
-            <button data-code="${code}" data-act="borrarV" class="secondary">Borrar</button>
-          </td>
         `;
         tbody.appendChild(tr);
       }
@@ -217,11 +199,6 @@
           <td style="background:#fff">${idx++}</td>
           <td>${code}</td>
           <td class="count">${qty}</td>
-          <td class="actions">
-            <button data-code="${code}" data-act="menosI" class="ghost">-1</button>
-            <button data-code="${code}" data-act="masI" class="ghost">+1</button>
-            <button data-code="${code}" data-act="borrarI" class="secondary">Borrar</button>
-          </td>
         `;
         tbody.appendChild(tr);
       }
@@ -238,7 +215,6 @@
       // sumar válido
       picks.push(key);
       counts.set(key, (counts.get(key)||0) + 1);
-      ultimoValido = key;
 
       setEstado(true, `${info.codigo} OK — ${info.articulo} / ${info.color} / ${info.talle}`);
       updatePills();
@@ -318,89 +294,6 @@
       processRawInput(raw);
       scan.value = '';
       scan.focus();
-    });
-
-    // Válidos: deshacer último
-    $('#deshacer').addEventListener('click', ()=>{
-      if (!ultimoValido) return;
-      const q = counts.get(ultimoValido)||0;
-      if (q > 1) counts.set(ultimoValido, q-1);
-      else counts.delete(ultimoValido);
-      const ix = picks.lastIndexOf(ultimoValido);
-      if (ix >= 0) picks.splice(ix,1);
-      const info = codeInfo.get(ultimoValido);
-      setEstado(true, `Deshecho: ${info ? info.codigo : ultimoValido}`);
-      updatePills();
-      renderTablaValidos();
-      ultimoValido = null;
-    });
-
-    // Limpiar válidos
-    $('#limpiarValidos').addEventListener('click', ()=>{
-      if (!confirm('¿Vaciar válidos?')) return;
-      picks = [];
-      counts.clear();
-      ultimoValido = null;
-      updatePills();
-      renderTablaValidos();
-      setEstado(false, 'Pendiente');
-      scan.focus();
-    });
-
-    // Acciones en tabla de válidos
-    $('#tablaValidos').addEventListener('click', (e)=>{
-      const btn = e.target.closest('button[data-act]');
-      if (!btn) return;
-      const act = btn.dataset.act;
-      const code = btn.dataset.code;
-      const q = counts.get(code)||0;
-      if (act === 'masV'){
-        counts.set(code, q+1);
-        picks.push(code);
-      } else if (act === 'menosV'){
-        if (q <= 1) counts.delete(code);
-        else counts.set(code, q-1);
-        const ix = picks.lastIndexOf(code);
-        if (ix >= 0) picks.splice(ix,1);
-      } else if (act === 'borrarV'){
-        counts.delete(code);
-        picks = picks.filter(c => c !== code);
-      }
-      updatePills();
-      renderTablaValidos();
-    });
-
-    // Limpiar inválidos
-    $('#limpiarInvalidos').addEventListener('click', ()=>{
-      if (!confirm('¿Vaciar inválidos?')) return;
-      invalidPicks = [];
-      invalidCounts.clear();
-      updatePills();
-      renderTablaInvalidos();
-      scan.focus();
-    });
-
-    // Acciones en tabla de inválidos
-    $('#tablaInvalidos').addEventListener('click', (e)=>{
-      const btn = e.target.closest('button[data-act]');
-      if (!btn) return;
-      const act = btn.dataset.act;
-      const code = btn.dataset.code;
-      const q = invalidCounts.get(code)||0;
-      if (act === 'masI'){
-        invalidCounts.set(code, q+1);
-        invalidPicks.push(code);
-      } else if (act === 'menosI'){
-        if (q <= 1) invalidCounts.delete(code);
-        else invalidCounts.set(code, q-1);
-        const ix = invalidPicks.lastIndexOf(code);
-        if (ix >= 0) invalidPicks.splice(ix,1);
-      } else if (act === 'borrarI'){
-        invalidCounts.delete(code);
-        invalidPicks = invalidPicks.filter(c => c !== code);
-      }
-      updatePills();
-      renderTablaInvalidos();
     });
 
     // ======== Descargas ========
