@@ -65,7 +65,7 @@
             <button id="confirmar">Confirmar</button>
           </div>
         </div>
-        <div class="status" id="estado"><span class="bad">Pendiente</span></div>
+        <div class="status" id="estado"><span class="bad">Cargando base…</span></div>
       </div>
 
       <div class="flex" style="margin-top:8px;flex-wrap:wrap">
@@ -116,21 +116,18 @@
   </div>
 
   <script>
-    // ===== Utilidades de normalización =====
+    // ===== Normalización y utilidades =====
     const normUp = (s) => (s ?? '').toString()
-      .normalize('NFKD').replace(/[\u0300-\u036f]/g,'') // sin acentos
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
       .trim().toUpperCase();
-
-    // keyify = versión para comparar (borra TODO lo no alfanumérico)
-    const keyify = (s) => normUp(s).replace(/[^A-Z0-9]/g, '');
-
+    const keyify = (s) => normUp(s).replace(/[^A-Z0-9]/g,'');
     const $ = (s) => document.querySelector(s);
 
     const COLOR_ALIASES = {
       'S':'SURTIDO','SUR':'SURTIDO',
       'U':'UNICO','UN':'UNICO','UNQ':'UNICO',
-      'N':'NEGRO','NE':'NEGRO',
-      'B':'BLANCO','BL':'BLANCO','BLA':'BLANCO',
+      'N':'NEGRO','NE':'NEGRO','BK':'NEGRO',
+      'B':'BLANCO','BL':'BLANCO','BLA':'BLANCO','WH':'BLANCO',
       'A':'AZUL','AZ':'AZUL',
       'R':'ROJO','RO':'ROJO',
       'V':'VERDE','VE':'VERDE',
@@ -140,30 +137,23 @@
       'BE':'BEIGE','MA':'MARRON','LI':'LILA',
       'AM':'AMARILLO','BO':'BORDO','FU':'FUCSIA'
     };
-    const TALLE_ALIASES = {
-      'U':'UNICO','UN':'UNICO','UNQ':'UNICO'
-      // XS,S,M,L,XL,XXL ya quedan tal cual; números (85,90,95...) también
-    };
+    const TALLE_ALIASES = {'U':'UNICO','UN':'UNICO','UNQ':'UNICO'};
 
     // ===== Estado =====
     let picks = [];                // válidos (codeKey) con repetidos
     let counts = new Map();        // codeKey -> cantidad
-    let invalidPicks = [];         // inválidos (texto normalizado) con repetidos
+    let invalidPicks = [];         // inválidos normalizados con repetidos
     let invalidCounts = new Map(); // inválidos -> cantidad
 
     // Índices
-    const codeInfo = new Map();       // codeKey (normUp) -> {codigo, articulo, color, talle}
+    const codeInfo = new Map();       // codeKey -> {codigo, articulo, color, talle}
     const comboToCode = new Map();    // artKey|colorKey|talleKey -> codeKey
-    const artColors = new Map();      // artKey -> Set(colorKey) disponibles
-    const artTalles = new Map();      // artKey -> Set(talleKey) disponibles
+    const artColors = new Map();      // artKey -> Set(colorKey)
+    const artTalles = new Map();      // artKey -> Set(talleKey)
 
     function yyyymmdd(){ const d=new Date(); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`; }
     function sanitizeForFile(s){ return normUp(s).replace(/[^A-Z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
-
-    function setEstado(ok,msg){
-      $('#estado').innerHTML = ok ? `<span class="ok">✅ ${msg||'Válido'}</span>` :
-                                    `<span class="bad">❌ ${msg||'No registrado'}</span>`;
-    }
+    function setEstado(ok,msg){ $('#estado').innerHTML = ok ? `<span class="ok">✅ ${msg||'Válido'}</span>` : `<span class="bad">❌ ${msg||'No registrado'}</span>`; }
     function updatePills(){
       $('#pillTotal').textContent    = `${picks.length} válidos totales`;
       $('#pillUnicos').textContent   = `${counts.size} válidos únicos`;
@@ -195,39 +185,31 @@
       }
     }
 
-    // Resuelve alias/prefijo del COLOR dentro de los disponibles del artículo
+    // Resolución de alias/prefijos para color y talle
     function resolveColorKey(artKey, rawColor){
-      const inKey = keyify(rawColor);
-      // 1) alias directo
-      const alias = COLOR_ALIASES[normUp(rawColor)];
-      const aliasKey = alias ? keyify(alias) : null;
-
       const set = artColors.get(artKey) || new Set();
-      if (aliasKey && set.has(aliasKey)) return aliasKey;
-      if (set.has(inKey)) return inKey;
-
-      // 2) match por prefijo entre los colores de ese artículo
-      const candidates = [...set].filter(k => k.startsWith(inKey));
-      if (candidates.length === 1) return candidates[0];
-
-      return inKey; // devolver tal cual (probablemente fallará más adelante)
+      const alias = COLOR_ALIASES[normUp(rawColor)];
+      const kIn = keyify(rawColor);
+      const kAlias = alias ? keyify(alias) : null;
+      if (kAlias && set.has(kAlias)) return kAlias;
+      if (set.has(kIn)) return kIn;
+      const pref = [...set].filter(k => k.startsWith(kIn));
+      if (pref.length === 1) return pref[0];
+      return kIn;
     }
-
-    // Alias de talle (U -> UNICO)
     function resolveTalleKey(artKey, rawTalle){
       const set = artTalles.get(artKey) || new Set();
       const alias = TALLE_ALIASES[normUp(rawTalle)];
-      const k1 = keyify(rawTalle);
-      const k2 = alias ? keyify(alias) : null;
-      if (k2 && set.has(k2)) return k2;
-      if (set.has(k1)) return k1;
-      // prefijo (ej 8 -> 85 si es único)
-      const pref = [...set].filter(k => k.startsWith(k1));
+      const kIn = keyify(rawTalle);
+      const kAlias = alias ? keyify(alias) : null;
+      if (kAlias && set.has(kAlias)) return kAlias;
+      if (set.has(kIn)) return kIn;
+      const pref = [...set].filter(k => k.startsWith(kIn));
       if (pref.length === 1) return pref[0];
-      return k1;
+      return kIn;
     }
 
-    // Parsea "ART!COLOR!TALLE"
+    // Parse "ART!COLOR!TALLE"
     function parseComposite(s){
       const txt = normUp(s);
       if (!txt.includes('!')) return null;
@@ -240,7 +222,7 @@
       const raw = input.toString();
       const codeKey = normUp(raw);
 
-      // 1) ¿Es un código directo?
+      // 1) ¿Código directo?
       const infoDirect = codeInfo.get(codeKey);
       if (infoDirect){
         picks.push(codeKey);
@@ -249,20 +231,17 @@
         updatePills(); renderTablaValidos(); return;
       }
 
-      // 2) ¿Es ART!COLOR!TALLE?
+      // 2) ¿ART!COLOR!TALLE?
       const comp = parseComposite(raw);
       if (comp){
         const artKey = keyify(comp.art);
         const colorKey = resolveColorKey(artKey, comp.col);
         const talleKey = resolveTalleKey(artKey, comp.tal);
-
-        const comboKey = `${artKey}|${colorKey}|${talleKey}`;
-        const mappedCodeKey = comboToCode.get(comboKey);
+        const mappedCodeKey = comboToCode.get(`${artKey}|${colorKey}|${talleKey}`);
         if (mappedCodeKey){
           const info = codeInfo.get(mappedCodeKey);
           picks.push(mappedCodeKey);
           counts.set(mappedCodeKey, (counts.get(mappedCodeKey)||0)+1);
-          // Mostrar el color/talle resueltos (por si vino abreviado)
           setEstado(true, `${info.codigo} OK — ${info.articulo} / ${info.color} / ${info.talle}`);
           updatePills(); renderTablaValidos(); return;
         }
@@ -281,44 +260,70 @@
       for (const t of tokens) addValido(t);
     }
 
-    // ===== Cargar equivalencias.csv =====
-    fetch('equivalencias.csv')
-      .then(r => r.text())
-      .then(text => {
-        const lines = text.split(/\r?\n/).filter(Boolean);
-        if (lines.length <= 1){ setEstado(false,'equivalencias.csv vacío'); return; }
+    // ===== Carga de equivalencias (PRINCIPAL + SECUNDARIA) =====
+    function ingestRow(codigo, articulo, color, talle){
+      const codeKey = normUp(codigo);
+      if (!codeKey) return;
 
-        const header = lines[0].split(';').map(c => c.replace(/^"|"$|(\r)/g,'').trim().toLowerCase());
-        const pos = (name, fb) => { const i = header.indexOf(name); return i>=0 ? i : fb; };
+      // Si ya existe ese código, no lo pisamos (la primaria tiene prioridad)
+      if (!codeInfo.has(codeKey)) {
+        codeInfo.set(codeKey, { codigo, articulo, color, talle });
+      }
+
+      const artKey = keyify(articulo);
+      const colKey = keyify(color);
+      const talKey = keyify(talle);
+
+      if (!artColors.has(artKey)) artColors.set(artKey, new Set());
+      if (!artTalles.has(artKey)) artTalles.set(artKey, new Set());
+      artColors.get(artKey).add(colKey);
+      artTalles.get(artKey).add(talKey);
+
+      const comboKey = `${artKey}|${colKey}|${talKey}`;
+      // No pisar combos ya cargados por la primaria
+      if (!comboToCode.has(comboKey)) comboToCode.set(comboKey, codeKey);
+    }
+
+    async function loadPrimary(){
+      try{
+        const txt = await fetch('equivalencias.csv').then(r=>r.text());
+        const lines = txt.split(/\r?\n/).filter(Boolean);
+        if (lines.length <= 1) return;
+        const header = lines[0].split(';').map(c=>c.replace(/^"|"$|(\r)/g,'').trim().toLowerCase());
+        const pos = (name, fb) => { const i = header.indexOf(name); return i>=0? i : fb; };
         const iCodigo=pos('codigo',0), iArt=pos('articulo',1), iCol=pos('color',2), iTal=pos('talle',3);
-
         for (const line of lines.slice(1)){
-          const cols = line.split(';').map(c => c.replace(/^"|"$|(\r)/g,'').trim());
-          const codigo=cols[iCodigo]??'', art=cols[iArt]??'', col=cols[iCol]??'', tal=cols[iTal]??'';
-          const codeKey = normUp(codigo);
-          if (!codeKey) continue;
-
-          // Guardar info por código
-          codeInfo.set(codeKey, { codigo, articulo: art, color: col, talle: tal });
-
-          // Índices por artículo -> colores/talles disponibles
-          const artKey = keyify(art);
-          const colKey = keyify(col);
-          const talKey = keyify(tal);
-
-          if (!artColors.has(artKey)) artColors.set(artKey, new Set());
-          if (!artTalles.has(artKey)) artTalles.set(artKey, new Set());
-          artColors.get(artKey).add(colKey);
-          artTalles.get(artKey).add(talKey);
-
-          // Índice de combinación
-          const comboKey = `${artKey}|${colKey}|${talKey}`;
-          if (!comboToCode.has(comboKey)) comboToCode.set(comboKey, codeKey);
+          const cols = line.split(';').map(c=>c.replace(/^"|"$|(\r)/g,'').trim());
+          ingestRow(cols[iCodigo]??'', cols[iArt]??'', cols[iCol]??'', cols[iTal]??'');
         }
+      }catch(e){ /* silencioso: si falla, seguimos con secundaria */ }
+    }
 
-        setEstado(false,'Base cargada. Escaneá para validar.');
-      })
-      .catch(() => setEstado(false,'Error al cargar equivalencias.csv'));
+    async function loadSecondary(){
+      try{
+        const txt = await fetch('equivalencias_secundarias.csv').then(r=>{
+          if (!r.ok) throw new Error('no-secondary');
+          return r.text();
+        });
+        // SIN encabezado: cada línea = codigo;articulo;color;talle
+        const lines = txt.split(/\r?\n/).filter(Boolean);
+        for (const line of lines){
+          const cols = line.split(';').map(c=>c.replace(/^"|"$|(\r)/g,'').trim());
+          const [codigo='', articulo='', color='', talle=''] = cols;
+          ingestRow(codigo, articulo, color, talle);
+        }
+      }catch(e){
+        // Si no existe el archivo, no es error bloqueante
+      }
+    }
+
+    (async function boot(){
+      await loadPrimary();
+      await loadSecondary();
+      // listo para usar
+      if (codeInfo.size > 0) setEstado(false,'Base cargada. Escaneá para validar.');
+      else setEstado(false,'No se pudo cargar ninguna equivalencia.');
+    })();
 
     // ===== UI =====
     const scan = $('#scan');
