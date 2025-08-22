@@ -32,7 +32,6 @@
   <div class="wrap">
     <h1>Pickeo de Stock</h1>
 
-    <!-- Encabezado -->
     <section class="topbar">
       <div>
         <label for="responsable">Responsable</label>
@@ -54,7 +53,6 @@
       </div>
     </section>
 
-    <!-- Pickeo -->
     <section class="card">
       <div class="flex" style="justify-content:space-between;flex-wrap:wrap;gap:12px">
         <div class="flex" style="gap:12px;flex:1 1 320px">
@@ -97,7 +95,6 @@
         </table>
       </div>
 
-      <!-- INVÁLIDOS -->
       <div class="section-title">
         <h2 style="margin:0;font-size:18px">Códigos inválidos</h2>
         <span class="pill" id="pillInvalidos2">0 códigos</span>
@@ -119,241 +116,267 @@
   </div>
 
   <script>
-    // ========= Estado =========
-    let picks = [];                // válidos (normalizados) con repetidos
-    let counts = new Map();        // code -> cantidad
-    let invalidPicks = [];         // inválidos (normalizados) con repetidos
-    let invalidCounts = new Map(); // code -> cantidad
+    // ===== Utilidades de normalización =====
+    const normUp = (s) => (s ?? '').toString()
+      .normalize('NFKD').replace(/[\u0300-\u036f]/g,'') // sin acentos
+      .trim().toUpperCase();
 
-    // Índices de validación
-    const codeInfo = new Map();    // CODE_NORMAL -> {codigo, articulo, color, talle}
-    const comboToCode = new Map(); // ART|COLOR|TALLE (norm) -> CODE_NORMAL
+    // keyify = versión para comparar (borra TODO lo no alfanumérico)
+    const keyify = (s) => normUp(s).replace(/[^A-Z0-9]/g, '');
 
     const $ = (s) => document.querySelector(s);
 
-    // ========= Utiles =========
-    const norm = (s) => (s || '').toString().trim().toLocaleUpperCase('es-AR');
-
-    const sanitizeForFile = (s) => s.normalize('NFKD')
-      .replace(/[\u0300-\u036f]/g,'')
-      .replace(/[^a-zA-Z0-9]+/g,'_')
-      .replace(/^_+|_+$/g,'')
-      .toUpperCase();
-
-    const yyyymmdd = () => {
-      const d = new Date();
-      return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('');
+    const COLOR_ALIASES = {
+      'S':'SURTIDO','SUR':'SURTIDO',
+      'U':'UNICO','UN':'UNICO','UNQ':'UNICO',
+      'N':'NEGRO','NE':'NEGRO',
+      'B':'BLANCO','BL':'BLANCO','BLA':'BLANCO',
+      'A':'AZUL','AZ':'AZUL',
+      'R':'ROJO','RO':'ROJO',
+      'V':'VERDE','VE':'VERDE',
+      'GR':'GRIS','GRA':'GRIS',
+      'CE':'CELESTE','CR':'CRUDO',
+      'NA':'NATURAL','NU':'NUDE',
+      'BE':'BEIGE','MA':'MARRON','LI':'LILA',
+      'AM':'AMARILLO','BO':'BORDO','FU':'FUCSIA'
+    };
+    const TALLE_ALIASES = {
+      'U':'UNICO','UN':'UNICO','UNQ':'UNICO'
+      // XS,S,M,L,XL,XXL ya quedan tal cual; números (85,90,95...) también
     };
 
-    function setEstado(ok, msg){
-      $('#estado').innerHTML = ok ? `<span class="ok">✅ ${msg||'Válido'}</span>`
-                                  : `<span class="bad">❌ ${msg||'No registrado'}</span>`;
-    }
+    // ===== Estado =====
+    let picks = [];                // válidos (codeKey) con repetidos
+    let counts = new Map();        // codeKey -> cantidad
+    let invalidPicks = [];         // inválidos (texto normalizado) con repetidos
+    let invalidCounts = new Map(); // inválidos -> cantidad
 
+    // Índices
+    const codeInfo = new Map();       // codeKey (normUp) -> {codigo, articulo, color, talle}
+    const comboToCode = new Map();    // artKey|colorKey|talleKey -> codeKey
+    const artColors = new Map();      // artKey -> Set(colorKey) disponibles
+    const artTalles = new Map();      // artKey -> Set(talleKey) disponibles
+
+    function yyyymmdd(){ const d=new Date(); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`; }
+    function sanitizeForFile(s){ return normUp(s).replace(/[^A-Z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
+
+    function setEstado(ok,msg){
+      $('#estado').innerHTML = ok ? `<span class="ok">✅ ${msg||'Válido'}</span>` :
+                                    `<span class="bad">❌ ${msg||'No registrado'}</span>`;
+    }
     function updatePills(){
       $('#pillTotal').textContent    = `${picks.length} válidos totales`;
       $('#pillUnicos').textContent   = `${counts.size} válidos únicos`;
       $('#pillInvalidos').textContent  = `${invalidPicks.length} inválidos`;
       $('#pillInvalidos2').textContent = `${invalidCounts.size} códigos`;
     }
-
     function renderTablaValidos(){
-      const tbody = $('#tablaValidos');
-      tbody.innerHTML = '';
-      let idx = 1;
-      for (const [code, qty] of counts.entries()){
-        const info = codeInfo.get(code) || {codigo: code, articulo:'-', color:'-', talle:'-'};
+      const tb = $('#tablaValidos'); tb.innerHTML = ''; let i=1;
+      for (const [codeKey, qty] of counts.entries()){
+        const info = codeInfo.get(codeKey) || {codigo: codeKey, articulo:'-', color:'-', talle:'-'};
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td style="background:#fff">${idx++}</td>
-          <td>${info.codigo}</td>
-          <td>${info.articulo}</td>
-          <td>${info.color}</td>
-          <td>${info.talle}</td>
-          <td class="count">${qty}</td>
-        `;
-        tbody.appendChild(tr);
+        tr.innerHTML = `<td style="background:#fff">${i++}</td>
+                        <td>${info.codigo}</td>
+                        <td>${info.articulo}</td>
+                        <td>${info.color}</td>
+                        <td>${info.talle}</td>
+                        <td class="count">${qty}</td>`;
+        tb.appendChild(tr);
       }
     }
-
     function renderTablaInvalidos(){
-      const tbody = $('#tablaInvalidos');
-      tbody.innerHTML = '';
-      let idx = 1;
+      const tb = $('#tablaInvalidos'); tb.innerHTML = ''; let i=1;
       for (const [code, qty] of invalidCounts.entries()){
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td style="background:#fff">${idx++}</td>
-          <td>${code}</td>
-          <td class="count">${qty}</td>
-        `;
-        tbody.appendChild(tr);
+        tr.innerHTML = `<td style="background:#fff">${i++}</td>
+                        <td>${code}</td>
+                        <td class="count">${qty}</td>`;
+        tb.appendChild(tr);
       }
     }
 
-    // Detecta formato "ART!COLOR!TALLE" y devuelve {articulo,color,talle} normalizados
-    function parseComposite(raw){
-      const txt = norm(raw);
-      if (!txt.includes('!')) return null;
-      const parts = txt.split('!').map(p=>p.trim()).filter(Boolean);
-      if (parts.length !== 3) return null;
-      return { articulo: parts[0], color: parts[1], talle: parts[2] };
+    // Resuelve alias/prefijo del COLOR dentro de los disponibles del artículo
+    function resolveColorKey(artKey, rawColor){
+      const inKey = keyify(rawColor);
+      // 1) alias directo
+      const alias = COLOR_ALIASES[normUp(rawColor)];
+      const aliasKey = alias ? keyify(alias) : null;
+
+      const set = artColors.get(artKey) || new Set();
+      if (aliasKey && set.has(aliasKey)) return aliasKey;
+      if (set.has(inKey)) return inKey;
+
+      // 2) match por prefijo entre los colores de ese artículo
+      const candidates = [...set].filter(k => k.startsWith(inKey));
+      if (candidates.length === 1) return candidates[0];
+
+      return inKey; // devolver tal cual (probablemente fallará más adelante)
     }
 
-    function addValido(inputCode){
-      const keyCode = norm(inputCode);
-      if (!keyCode) return;
+    // Alias de talle (U -> UNICO)
+    function resolveTalleKey(artKey, rawTalle){
+      const set = artTalles.get(artKey) || new Set();
+      const alias = TALLE_ALIASES[normUp(rawTalle)];
+      const k1 = keyify(rawTalle);
+      const k2 = alias ? keyify(alias) : null;
+      if (k2 && set.has(k2)) return k2;
+      if (set.has(k1)) return k1;
+      // prefijo (ej 8 -> 85 si es único)
+      const pref = [...set].filter(k => k.startsWith(k1));
+      if (pref.length === 1) return pref[0];
+      return k1;
+    }
 
-      // 1) Directo por código (columna "codigo")
-      let info = codeInfo.get(keyCode);
-      if (info){
-        picks.push(keyCode);
-        counts.set(keyCode, (counts.get(keyCode)||0) + 1);
-        setEstado(true, `${info.codigo} OK — ${info.articulo} / ${info.color} / ${info.talle}`);
+    // Parsea "ART!COLOR!TALLE"
+    function parseComposite(s){
+      const txt = normUp(s);
+      if (!txt.includes('!')) return null;
+      const parts = txt.split('!').map(p => p.trim()).filter(Boolean);
+      if (parts.length !== 3) return null;
+      return { art: parts[0], col: parts[1], tal: parts[2] };
+    }
+
+    function addValido(input){
+      const raw = input.toString();
+      const codeKey = normUp(raw);
+
+      // 1) ¿Es un código directo?
+      const infoDirect = codeInfo.get(codeKey);
+      if (infoDirect){
+        picks.push(codeKey);
+        counts.set(codeKey, (counts.get(codeKey)||0)+1);
+        setEstado(true, `${infoDirect.codigo} OK — ${infoDirect.articulo} / ${infoDirect.color} / ${infoDirect.talle}`);
         updatePills(); renderTablaValidos(); return;
       }
 
-      // 2) Formato compuesto "ART!COLOR!TALLE"  -> buscar combinación
-      const comp = parseComposite(inputCode);
+      // 2) ¿Es ART!COLOR!TALLE?
+      const comp = parseComposite(raw);
       if (comp){
-        const comboKey = `${comp.articulo}|${comp.color}|${comp.talle}`;
-        const mappedCode = comboToCode.get(comboKey);
-        if (mappedCode){
-          const info2 = codeInfo.get(mappedCode); // existe por construcción
-          picks.push(mappedCode);
-          counts.set(mappedCode, (counts.get(mappedCode)||0) + 1);
-          setEstado(true, `${info2.codigo} OK — ${info2.articulo} / ${info2.color} / ${info2.talle}`);
+        const artKey = keyify(comp.art);
+        const colorKey = resolveColorKey(artKey, comp.col);
+        const talleKey = resolveTalleKey(artKey, comp.tal);
+
+        const comboKey = `${artKey}|${colorKey}|${talleKey}`;
+        const mappedCodeKey = comboToCode.get(comboKey);
+        if (mappedCodeKey){
+          const info = codeInfo.get(mappedCodeKey);
+          picks.push(mappedCodeKey);
+          counts.set(mappedCodeKey, (counts.get(mappedCodeKey)||0)+1);
+          // Mostrar el color/talle resueltos (por si vino abreviado)
+          setEstado(true, `${info.codigo} OK — ${info.articulo} / ${info.color} / ${info.talle}`);
           updatePills(); renderTablaValidos(); return;
         }
       }
 
-      // 3) No encontrado => inválido
-      addInvalido(inputCode);
-    }
-
-    function addInvalido(inputCode){
-      const k = norm(inputCode);
-      invalidPicks.push(k);
-      invalidCounts.set(k, (invalidCounts.get(k)||0) + 1);
-      setEstado(false, `${inputCode} no está registrado`);
+      // 3) No se encontró → inválido
+      const invKey = normUp(raw);
+      invalidPicks.push(invKey);
+      invalidCounts.set(invKey, (invalidCounts.get(invKey)||0)+1);
+      setEstado(false, `${raw} no está registrado`);
       updatePills(); renderTablaInvalidos();
     }
 
     function processRawInput(raw){
       const tokens = raw.split(/[\n,;\t ]+/).map(t=>t.trim()).filter(Boolean);
-      for(const t of tokens) addValido(t);
+      for (const t of tokens) addValido(t);
     }
 
-    // ========= Cargar equivalencias.csv =========
+    // ===== Cargar equivalencias.csv =====
     fetch('equivalencias.csv')
       .then(r => r.text())
       .then(text => {
         const lines = text.split(/\r?\n/).filter(Boolean);
-        if (lines.length <= 1) { setEstado(false, 'equivalencias.csv vacío'); return; }
+        if (lines.length <= 1){ setEstado(false,'equivalencias.csv vacío'); return; }
 
         const header = lines[0].split(';').map(c => c.replace(/^"|"$|(\r)/g,'').trim().toLowerCase());
-        const idx = (name, fb) => { const i = header.indexOf(name); return i >= 0 ? i : fb; };
-        const iCodigo   = idx('codigo',   0);
-        const iArticulo = idx('articulo', 1);
-        const iColor    = idx('color',    2);
-        const iTalle    = idx('talle',    3);
+        const pos = (name, fb) => { const i = header.indexOf(name); return i>=0 ? i : fb; };
+        const iCodigo=pos('codigo',0), iArt=pos('articulo',1), iCol=pos('color',2), iTal=pos('talle',3);
 
         for (const line of lines.slice(1)){
           const cols = line.split(';').map(c => c.replace(/^"|"$|(\r)/g,'').trim());
-          const codigo   = cols[iCodigo]   ?? '';
-          const articulo = cols[iArticulo] ?? '';
-          const color    = cols[iColor]    ?? '';
-          const talle    = cols[iTalle]    ?? '';
-          const keyCode  = norm(codigo);
-          if (!keyCode) continue;
-          const info = { codigo, articulo, color, talle };
-          codeInfo.set(keyCode, info);
+          const codigo=cols[iCodigo]??'', art=cols[iArt]??'', col=cols[iCol]??'', tal=cols[iTal]??'';
+          const codeKey = normUp(codigo);
+          if (!codeKey) continue;
 
-          // índice por combinación (normalizada)
-          const comboKey = `${norm(articulo)}|${norm(color)}|${norm(talle)}`;
-          // si hay duplicados de combinación, mantenemos el primero
-          if (!comboToCode.has(comboKey)) comboToCode.set(comboKey, keyCode);
+          // Guardar info por código
+          codeInfo.set(codeKey, { codigo, articulo: art, color: col, talle: tal });
+
+          // Índices por artículo -> colores/talles disponibles
+          const artKey = keyify(art);
+          const colKey = keyify(col);
+          const talKey = keyify(tal);
+
+          if (!artColors.has(artKey)) artColors.set(artKey, new Set());
+          if (!artTalles.has(artKey)) artTalles.set(artKey, new Set());
+          artColors.get(artKey).add(colKey);
+          artTalles.get(artKey).add(talKey);
+
+          // Índice de combinación
+          const comboKey = `${artKey}|${colKey}|${talKey}`;
+          if (!comboToCode.has(comboKey)) comboToCode.set(comboKey, codeKey);
         }
-        setEstado(false, 'Base cargada. Escaneá para validar.');
+
+        setEstado(false,'Base cargada. Escaneá para validar.');
       })
-      .catch(() => setEstado(false, 'Error al cargar equivalencias.csv'));
+      .catch(() => setEstado(false,'Error al cargar equivalencias.csv'));
 
-    // ========= Interacción =========
+    // ===== UI =====
     const scan = $('#scan');
-
-    scan.addEventListener('keydown', (e)=> {
-      if (e.key === 'Enter'){ e.preventDefault(); $('#confirmar').click(); }
-    });
-
+    scan.addEventListener('keydown', e => { if (e.key==='Enter'){ e.preventDefault(); $('#confirmar').click(); } });
     scan.addEventListener('input', ()=>{
       const val = scan.value;
       if (!val.trim()){ setEstado(false,'Pendiente'); return; }
 
-      // Previsualización: intenta resolver directo o por combinación
-      const direct = codeInfo.get(norm(val));
-      if (direct){
-        setEstado(true, `Posible válido — ${direct.articulo} / ${direct.color} / ${direct.talle}`);
-        return;
-      }
+      // preview directo
+      const direct = codeInfo.get(normUp(val));
+      if (direct){ setEstado(true, `Posible válido — ${direct.articulo} / ${direct.color} / ${direct.talle}`); return; }
+
+      // preview combinado
       const comp = parseComposite(val);
       if (comp){
-        const mapped = comboToCode.get(`${comp.articulo}|${comp.color}|${comp.talle}`);
+        const artKey = keyify(comp.art);
+        const colorKey = resolveColorKey(artKey, comp.col);
+        const talleKey = resolveTalleKey(artKey, comp.tal);
+        const mapped = comboToCode.get(`${artKey}|${colorKey}|${talleKey}`);
         if (mapped){
           const info = codeInfo.get(mapped);
           setEstado(true, `Posible válido — ${info.articulo} / ${info.color} / ${info.talle}`);
           return;
         }
       }
-      setEstado(false, 'No registrado');
+      setEstado(false,'No registrado');
     });
-
     $('#confirmar').addEventListener('click', ()=>{
       const raw = scan.value;
       if (!raw.trim()) return;
       processRawInput(raw);
-      scan.value = ''; scan.focus();
+      scan.value=''; scan.focus();
     });
 
-    // ======== Descargas ========
+    // Descargas
     function requireMeta(){
-      const responsable = ($('#responsable').value||'').trim();
-      const piso = ($('#piso').value||'').trim();
-      const sector = ($('#sector').value||'').trim();
-      if (!responsable) { alert('Completá el RESPONSABLE.'); return null; }
-      if (!piso)        { alert('Seleccioná el PISO.');      return null; }
-      if (!sector)      { alert('Completá el SECTOR.');      return null; }
-      return {
-        responsable: sanitizeForFile(responsable),
-        piso: sanitizeForFile(piso),
-        sector: sanitizeForFile(sector)
-      };
+      const responsable=($('#responsable').value||'').trim();
+      const piso=($('#piso').value||'').trim();
+      const sector=($('#sector').value||'').trim();
+      if(!responsable) return alert('Completá el RESPONSABLE.'), null;
+      if(!piso)        return alert('Seleccioná el PISO.'), null;
+      if(!sector)      return alert('Completá el SECTOR.'), null;
+      return { responsable:sanitizeForFile(responsable), piso:sanitizeForFile(piso), sector:sanitizeForFile(sector) };
     }
-
     function downloadTXT(lines, filename){
-      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      URL.revokeObjectURL(a.href);
-      a.remove();
+      const blob = new Blob([lines.join('\n')], {type:'text/plain;charset=utf-8'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename;
+      document.body.appendChild(a); a.click(); URL.revokeObjectURL(a.href); a.remove();
     }
-
-    // Válidos (historial con repetidos; siempre se exporta el CÓDIGO real de la base)
     $('#descargarValidos').addEventListener('click', ()=>{
-      if (picks.length === 0) return alert('No hay códigos válidos pickeados.');
-      const meta = requireMeta(); if (!meta) return;
-      const filename = `PICKEO_${yyyymmdd()}_${meta.piso}_${meta.sector}_${meta.responsable}.txt`;
-      downloadTXT(picks, filename);
+      if (picks.length===0) return alert('No hay códigos válidos pickeados.');
+      const m=requireMeta(); if(!m) return;
+      downloadTXT(picks, `PICKEO_${yyyymmdd()}_${m.piso}_${m.sector}_${m.responsable}.txt`);
     });
-
-    // Inválidos (historial con repetidos)
     $('#descargarInvalidos').addEventListener('click', ()=>{
-      if (invalidPicks.length === 0) return alert('No hay códigos inválidos.');
-      const meta = requireMeta(); if (!meta) return;
-      const filename = `INVALIDOS_${yyyymmdd()}_${meta.piso}_${meta.sector}_${meta.responsable}.txt`;
-      downloadTXT(invalidPicks, filename);
+      if (invalidPicks.length===0) return alert('No hay códigos inválidos.');
+      const m=requireMeta(); if(!m) return;
+      downloadTXT(invalidPicks, `INVALIDOS_${yyyymmdd()}_${m.piso}_${m.sector}_${m.responsable}.txt`);
     });
   </script>
 </body>
