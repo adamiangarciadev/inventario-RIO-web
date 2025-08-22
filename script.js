@@ -81,10 +81,15 @@ async function loadCSV() {
   const response = await fetch('equivalencias.csv');
   const text = await response.text();
   const lines = text.trim().split('\n');
+
   for (let i = 1; i < lines.length; i++) {
-    const parts = lines[i].split(';');
+    const parts = lines[i].replace(/"/g, '').split(';'); // Saca comillas y separa
     const code = parts[0]?.trim();
-    const desc = parts.slice(1).join(' - ').trim();
-    if (code) equivalencias[code] = desc;
+    const articulo = parts[1]?.trim();
+    const desc1 = parts[2]?.trim();
+    const desc2 = parts[3]?.trim();
+    const descripcion = `${articulo} - ${desc1} - ${desc2}`;
+    if (code) equivalencias[code] = descripcion;
   }
 }
+
