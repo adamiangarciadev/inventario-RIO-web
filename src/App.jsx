@@ -1,103 +1,103 @@
-import React, { useState } from "react";
-import { saveAs } from "file-saver";
-import equivalencias from "./equivalencias.json";
+// src/App.jsx
+import React, { useState } from 'react';
+import './App.css';
+import equivalencias from './equivalencias.json';
+import { saveAs } from 'file-saver';
 
-function App() {
-  const [codigo, setCodigo] = useState("");
-  const [cantidad, setCantidad] = useState(1);
-  const [piso, setPiso] = useState("PB");
-  const [sector, setSector] = useState("A");
-  const [responsable, setResponsable] = useState("Damian");
-  const [pickeados, setPickeados] = useState([]);
-  const [error, setError] = useState("");
+const App = () => {
+  const [codigo, setCodigo] = useState('');
+  const [piso, setPiso] = useState('PB');
+  const [sector, setSector] = useState('A');
+  const [responsable, setResponsable] = useState('');
+  const [registros, setRegistros] = useState([]);
+  const [noRegistrados, setNoRegistrados] = useState([]);
 
-  const equivalenciasMap = Object.fromEntries(
-    equivalencias.map((e) => [e.codigo, e])
-  );
+  const handleScan = (e) => {
+    const valor = e.target.value.trim();
+    if (valor.length > 4) {
+      setCodigo('');
+      const equivalencia = equivalencias.find(eq => eq.COD === valor);
 
-  const registrar = () => {
-    if (!codigo || !cantidad || isNaN(cantidad)) {
-      setError("Código o cantidad inválida");
-      return;
+      const entrada = {
+        fecha: new Date().toISOString().split('T')[0],
+        piso,
+        sector,
+        responsable,
+        codigo: valor,
+        descripcion: equivalencia ? `${equivalencia.ARTICULO} ${equivalencia.TALLE} ${equivalencia.COLOR}` : 'Equivalencia no registrada'
+      };
+
+      if (equivalencia) {
+        setRegistros([...registros, entrada]);
+      } else {
+        setNoRegistrados([...noRegistrados, entrada]);
+      }
+    } else {
+      setCodigo(valor);
     }
-    if (!equivalenciasMap[codigo]) {
-      setError("Código no encontrado en base");
-      return;
-    }
-    const nuevos = Array(parseInt(cantidad)).fill(codigo);
-    setPickeados([...pickeados, ...nuevos]);
-    setCodigo("");
-    setCantidad(1);
-    setError("");
   };
 
-  const exportar = () => {
-    const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const nombre = `stock_${fecha}_${piso}_${sector}_${responsable}.csv`;
-    const blob = new Blob([pickeados.join("\\n")], {
-      type: "text/csv;charset=utf-8",
-    });
+  const exportarCSV = (datos, tipo) => {
+    const filas = datos.map(row => `${row.fecha},${row.piso},${row.sector},${row.responsable},${row.codigo},${row.descripcion}`);
+    const contenido = filas.join('\n');
+    const blob = new Blob([contenido], { type: 'text/csv;charset=utf-8' });
+    const fecha = new Date().toISOString().split('T')[0];
+    const nombre = `stock_${fecha}_${piso}_${sector}_${responsable}_${tipo}.csv`;
     saveAs(blob, nombre);
   };
 
   return (
-    <div style={{ padding: 20, maxWidth: 500, margin: "auto" }}>
-      <h2>Inventario Henko Web</h2>
+    <div className="container">
+      <h1>Inventario Henko Web</h1>
 
-      <input
-        placeholder="Código de barras"
-        value={codigo}
-        onChange={(e) => setCodigo(e.target.value)}
-      />
+      <div className="formulario">
+        <input
+          type="text"
+          placeholder="Código de barras"
+          value={codigo}
+          onChange={handleScan}
+          autoFocus
+        />
+        <select onChange={e => setResponsable(e.target.value)} defaultValue="">
+          <option value="">Responsable</option>
+          <option value="Damian">Damian</option>
+          <option value="Lisa">Lisa</option>
+          <option value="Otro">Otro</option>
+        </select>
+        <select onChange={e => setPiso(e.target.value)} value={piso}>
+          <option>PB</option>
+          <option>1</option>
+          <option>2</option>
+        </select>
+        <select onChange={e => setSector(e.target.value)} value={sector}>
+          <option>A</option>
+          <option>B</option>
+          <option>C</option>
+          <option>D</option>
+        </select>
+      </div>
 
-      <input
-        type="number"
-        placeholder="Cantidad"
-        value={cantidad}
-        onChange={(e) => setCantidad(e.target.value)}
-      />
+      <div className="botones">
+        <button onClick={() => exportarCSV(registros, 'registrados')}>Exportar CSV registrados</button>
+        <button onClick={() => exportarCSV(noRegistrados, 'no_registrados')}>Exportar CSV no registrados</button>
+      </div>
 
-      <select value={piso} onChange={(e) => setPiso(e.target.value)}>
-        <option value="PB">PB</option>
-        <option value="1erPiso">1er Piso</option>
-        <option value="Deposito">Depósito</option>
-      </select>
-
-      <select value={sector} onChange={(e) => setSector(e.target.value)}>
-        <option value="A">A</option>
-        <option value="B">B</option>
-        <option value="Caja1">Caja 1</option>
-      </select>
-
-      <select
-        value={responsable}
-        onChange={(e) => setResponsable(e.target.value)}
-      >
-        <option value="Damian">Damian</option>
-        <option value="Luciana">Luciana</option>
-        <option value="EncargadoP1">Encargado Piso 1</option>
-      </select>
-
-      {error && <p style={{ color: "red" }}>{error}</p>}
-
-      <button onClick={registrar}>Registrar</button>
-      <button onClick={exportar}>Exportar CSV</button>
-
-      <div
-        style={{
-          maxHeight: 200,
-          overflowY: "auto",
-          marginTop: 10,
-          background: "#eee",
-          padding: 10,
-        }}
-      >
-        {pickeados.map((p, i) => (
-          <div key={i}>{p}</div>
-        ))}
+      <div className="tabla">
+        <h3>Registros actuales</h3>
+        <ul>
+          {registros.map((r, i) => (
+            <li key={i}><strong>{r.codigo}</strong> - {r.descripcion}</li>
+          ))}
+        </ul>
+        <h3>No registrados</h3>
+        <ul>
+          {noRegistrados.map((r, i) => (
+            <li key={i}><strong>{r.codigo}</strong> - {r.descripcion}</li>
+          ))}
+        </ul>
       </div>
     </div>
   );
-}
+};
 
 export default App;
