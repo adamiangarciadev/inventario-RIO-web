@@ -3,6 +3,9 @@ let registrados = [];
 let noRegistrados = [];
 let piso = "", sector = "", responsable = "";
 
+let inputBuffer = '';
+let debounceTimer = null;
+
 document.getElementById('config-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   piso = document.getElementById('piso').value.trim();
@@ -15,36 +18,45 @@ document.getElementById('config-form').addEventListener('submit', async (e) => {
 });
 
 document.getElementById('code-input').addEventListener('input', (e) => {
-  const code = e.target.value.trim();
-  if (code.length >= 5) { // Código mínimo razonable
+  const char = e.data || e.target.value.slice(-1);
+  inputBuffer += char;
+
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    const code = inputBuffer.trim();
+    inputBuffer = '';
     e.target.value = '';
+
+    if (code.length < 6) return;
+
     registrarCodigo(code);
-  }
+  }, 200);
 });
 
 function registrarCodigo(code) {
-  const equivalencia = equivalencias[code];
-  const lista = document.getElementById('results');
+  const result = equivalencias[code];
+  const display = result
+    ? `${code} - ${result}`
+    : `${code} - Equivalencia no registrada`;
+
   const item = document.createElement('li');
+  item.textContent = display;
+  item.className = result ? 'registrado' : 'no-registrado';
+  document.getElementById('results').appendChild(item);
 
-  if (equivalencia) {
-    item.textContent = `${code} - ${equivalencia.descripcion} - Talle: ${equivalencia.talle} - Color: ${equivalencia.color}`;
-    item.style.color = 'green';
-    registrados.push({ code, ...equivalencia });
+  if (result) {
+    registrados.push({ code, result });
+    document.getElementById('registrados-count').textContent = registrados.length;
   } else {
-    item.textContent = `${code} - Equivalencia no registrada`;
-    item.style.color = 'red';
     noRegistrados.push(code);
+    document.getElementById('no-registrados-count').textContent = noRegistrados.length;
   }
-
-  lista.appendChild(item);
 }
 
 document.getElementById('export-registered').addEventListener('click', () => {
   const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
   const name = `stock_${date}_${piso}_${sector}_${responsable}.csv`;
-  const content = 'Codigo,Descripcion,Talle,Color\n' +
-    registrados.map(r => `${r.code},${r.descripcion},${r.talle},${r.color}`).join('\n');
+  const content = 'Codigo,Equivalencia\n' + registrados.map(r => `${r.code},${r.result}`).join('\n');
   downloadCSV(name, content);
 });
 
@@ -70,9 +82,9 @@ async function loadCSV() {
   const text = await response.text();
   const lines = text.trim().split('\n');
   for (let i = 1; i < lines.length; i++) {
-    const [codigo, descripcion, talle, color] = lines[i].split(',').map(e => e.trim());
-    if (codigo) {
-      equivalencias[codigo] = { descripcion, talle, color };
-    }
+    const parts = lines[i].split(';');
+    const code = parts[0]?.trim();
+    const desc = parts.slice(1).join(' - ').trim();
+    if (code) equivalencias[code] = desc;
   }
 }
