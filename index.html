@@ -12,7 +12,7 @@
     h1{font-size:22px;margin:0 0 14px}
     .topbar{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
     label{display:block;font-weight:600;margin-bottom:6px}
-    input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:#fff}
+    input,select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:#fff}
     .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px}
     .grid{display:grid;grid-template-columns:1fr;gap:16px}
     .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
@@ -92,6 +92,9 @@
             <tr>
               <th style="width:72px">#</th>
               <th>Código</th>
+              <th>Artículo</th>
+              <th>Color</th>
+              <th>Talle</th>
               <th class="count">Cantidad</th>
               <th style="width:160px">Acciones</th>
             </tr>
@@ -104,11 +107,13 @@
 
   <script>
     // ========= Estado =========
-    let validSet = new Set();      // códigos válidos (normalizados)
-    let picks = [];                // historial de códigos aceptados (normalizados), permite repetidos (cantidad)
-    let counts = new Map();        // código -> cantidad (para la tabla)
-    let invalidos = 0;             // contador de intentos inválidos
-    let ultimo = null;             // último código agregado (para deshacer)
+    let picks = [];                // historial (normalizado), mantiene repetidos
+    let counts = new Map();        // code -> cantidad
+    let invalidos = 0;
+    let ultimo = null;
+
+    // Mapa: CODE_NORMALIZADO -> {codigo, articulo, color, talle}
+    const codeInfo = new Map();
 
     const $ = (s) => document.querySelector(s);
 
@@ -150,10 +155,14 @@
       tbody.innerHTML = '';
       let idx = 1;
       for (const [code, qty] of counts.entries()){
+        const info = codeInfo.get(code) || {codigo: code, articulo:'-', color:'-', talle:'-'};
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td style="background:#fff">${idx++}</td>
-          <td>${code}</td>
+          <td>${info.codigo}</td>
+          <td>${info.articulo}</td>
+          <td>${info.color}</td>
+          <td>${info.talle}</td>
           <td class="count">${qty}</td>
           <td class="actions">
             <button data-code="${code}" data-act="menos" class="ghost">-1</button>
@@ -165,25 +174,27 @@
       }
     }
 
-    function addPick(code){
-      const c = norm(code);
-      if (!c) return;
-      if (!validSet.has(c)){
+    function addPick(inputCode){
+      const key = norm(inputCode);
+      if (!key) return;
+      const info = codeInfo.get(key);
+      if (!info){
         invalidos++;
-        setEstado(false, `${code} no está registrado`);
+        setEstado(false, `${inputCode} no está registrado`);
         updatePills();
         return;
       }
-      picks.push(c);
-      counts.set(c, (counts.get(c)||0) + 1);
-      ultimo = c;
-      setEstado(true, `${code} OK`);
+      // sumar
+      picks.push(key);
+      counts.set(key, (counts.get(key)||0) + 1);
+      ultimo = key;
+
+      setEstado(true, `${info.codigo} OK — ${info.articulo} / ${info.color} / ${info.talle}`);
       updatePills();
       renderTabla();
     }
 
     function processRawInput(raw){
-      // separadores: Enter, coma, punto y coma, tab o espacios múltiples
       const tokens = raw.split(/[\n,;\t ]+/).map(t=>t.trim()).filter(Boolean);
       for(const t of tokens) addPick(t);
     }
@@ -192,15 +203,35 @@
     fetch('equivalencias.csv')
       .then(r => r.text())
       .then(text => {
-        // CSV con ; y comillas opcionales
         const lines = text.split(/\r?\n/).filter(Boolean);
-        // Buscar índice de columna "codigo" por si el header viene distinto
+        if (lines.length <= 1) { setEstado(false, 'equivalencias.csv vacío'); return; }
+
+        // detectar índices por header
         const header = lines[0].split(';').map(c => c.replace(/^"|"$|(\r)/g,'').trim().toLowerCase());
-        const idxCodigo = Math.max(0, header.indexOf('codigo')); // fallback 0 si no está
+        const idx = (name, fallback) => {
+          const i = header.indexOf(name);
+          return i >= 0 ? i : fallback;
+        };
+        const iCodigo   = idx('codigo',   0);
+        const iArticulo = idx('articulo', 1);
+        const iColor    = idx('color',    2);
+        const iTalle    = idx('talle',    3);
+
         for (const line of lines.slice(1)){
           const cols = line.split(';').map(c => c.replace(/^"|"$|(\r)/g,'').trim());
-          const code = norm(cols[idxCodigo]);
-          if (code) validSet.add(code);
+          const codigo   = cols[iCodigo]   ?? '';
+          const articulo = cols[iArticulo] ?? '';
+          const color    = cols[iColor]    ?? '';
+          const talle    = cols[iTalle]    ?? '';
+          const key = norm(codigo);
+          if (!key) continue;
+          // Guardamos info original para mostrarla tal cual
+          codeInfo.set(key, {
+            codigo: codigo,
+            articulo: articulo,
+            color: color,
+            talle: talle
+          });
         }
         setEstado(false, 'Base cargada. Escaneá para validar.');
       })
@@ -211,7 +242,6 @@
     // ========= Interacción =========
     const scan = $('#scan');
 
-    // Confirmar con Enter en el input
     scan.addEventListener('keydown', (e)=> {
       if (e.key === 'Enter'){
         e.preventDefault();
@@ -219,14 +249,14 @@
       }
     });
 
-    // Feedback en tiempo real mientras escribe (no suma, solo muestra estado)
     scan.addEventListener('input', ()=>{
-      const c = norm(scan.value);
-      if (!c){ setEstado(false,'Pendiente'); return; }
-      setEstado(validSet.has(c), validSet.has(c) ? 'Posible válido' : 'No registrado');
+      const key = norm(scan.value);
+      if (!key){ setEstado(false,'Pendiente'); return; }
+      const info = codeInfo.get(key);
+      if (info) setEstado(true, `Posible válido — ${info.articulo} / ${info.color} / ${info.talle}`);
+      else setEstado(false, 'No registrado');
     });
 
-    // Botón Confirmar: procesa el contenido del input (puede ser 1 o varios separados)
     $('#confirmar').addEventListener('click', ()=>{
       const raw = scan.value;
       if (!raw.trim()) return;
@@ -235,24 +265,20 @@
       scan.focus();
     });
 
-    // Deshacer último
     $('#deshacer').addEventListener('click', ()=>{
       if (!ultimo) return;
-      // quitar una unidad del último
-      const current = counts.get(ultimo)||0;
-      if (current > 1) counts.set(ultimo, current - 1);
+      const q = counts.get(ultimo)||0;
+      if (q > 1) counts.set(ultimo, q-1);
       else counts.delete(ultimo);
-      // quitar del historial (última ocurrencia)
-      for (let i = picks.length - 1; i >= 0; i--){
-        if (picks[i] === ultimo){ picks.splice(i,1); break; }
-      }
-      setEstado(true, `Deshecho: ${ultimo}`);
+      const ix = picks.lastIndexOf(ultimo);
+      if (ix >= 0) picks.splice(ix,1);
+      const info = codeInfo.get(ultimo);
+      setEstado(true, `Deshecho: ${info ? info.codigo : ultimo}`);
       updatePills();
       renderTabla();
       ultimo = null;
     });
 
-    // Limpiar todo
     $('#limpiar').addEventListener('click', ()=>{
       if (!confirm('¿Vaciar todo el pickeo?')) return;
       picks = [];
@@ -266,7 +292,6 @@
       scan.focus();
     });
 
-    // Acciones en tabla (+1, -1, borrar)
     $('#tablaBody').addEventListener('click', (e)=>{
       const btn = e.target.closest('button[data-act]');
       if (!btn) return;
@@ -279,7 +304,6 @@
       } else if (act === 'menos'){
         if (q <= 1) counts.delete(code);
         else counts.set(code, q-1);
-        // sacar una ocurrencia del historial
         const ix = picks.lastIndexOf(code);
         if (ix >= 0) picks.splice(ix,1);
       } else if (act === 'borrar'){
@@ -290,7 +314,7 @@
       renderTabla();
     });
 
-    // Descargar TXT
+    // Descargar TXT (historial con repetidos)
     $('#descargar').addEventListener('click', ()=>{
       if (picks.length === 0) return alert('No hay códigos pickeados.');
       const responsable = ($('#responsable').value||'').trim();
@@ -308,7 +332,6 @@
       };
       const filename = `PICKEO_${yyyymmdd()}_${meta.piso}_${meta.sector}_${meta.responsable}.txt`;
 
-      // Por defecto exportamos el HISTORIAL (con repetidos = cantidad)
       const contenido = picks.join('\n');
 
       const blob = new Blob([contenido], { type: 'text/plain;charset=utf-8' });
