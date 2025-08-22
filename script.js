@@ -16,7 +16,7 @@ document.getElementById('config-form').addEventListener('submit', async (e) => {
 
 document.getElementById('code-input').addEventListener('input', (e) => {
   const code = e.target.value.trim();
-  if (code.length >= 6) { // Código mínimo razonable
+  if (code.length >= 5) { // Código mínimo razonable
     e.target.value = '';
     registrarCodigo(code);
   }
