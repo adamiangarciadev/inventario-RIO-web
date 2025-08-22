@@ -14,7 +14,6 @@
     label{display:block;font-weight:600;margin-bottom:6px}
     input,select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:15px;background:#fff}
     .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px}
-    .grid{display:grid;grid-template-columns:1fr;gap:16px}
     .status{display:flex;gap:10px;align-items:center;margin-top:8px;font-weight:600}
     .status .ok{color:var(--ok)}
     .status .bad{color:var(--bad)}
@@ -116,30 +115,24 @@
           <tbody id="tablaInvalidos"></tbody>
         </table>
       </div>
-
     </section>
   </div>
 
   <script>
     // ========= Estado =========
-    // Válidos
-    let picks = [];                // historial (normalizado) con repetidos
+    let picks = [];                // válidos (normalizados) con repetidos
     let counts = new Map();        // code -> cantidad
-
-    // Inválidos
-    let invalidPicks = [];         // historial inválidos (normalizado) con repetidos
+    let invalidPicks = [];         // inválidos (normalizados) con repetidos
     let invalidCounts = new Map(); // code -> cantidad
 
-    // Info de códigos válidos
-    const codeInfo = new Map();    // CODE_NORMALIZADO -> {codigo, articulo, color, talle}
+    // Índices de validación
+    const codeInfo = new Map();    // CODE_NORMAL -> {codigo, articulo, color, talle}
+    const comboToCode = new Map(); // ART|COLOR|TALLE (norm) -> CODE_NORMAL
 
     const $ = (s) => document.querySelector(s);
 
     // ========= Utiles =========
-    const norm = (s) => (s || '')
-      .toString()
-      .trim()
-      .toLocaleUpperCase('es-AR');
+    const norm = (s) => (s || '').toString().trim().toLocaleUpperCase('es-AR');
 
     const sanitizeForFile = (s) => s.normalize('NFKD')
       .replace(/[\u0300-\u036f]/g,'')
@@ -149,24 +142,18 @@
 
     const yyyymmdd = () => {
       const d = new Date();
-      return [
-        d.getFullYear(),
-        String(d.getMonth()+1).padStart(2,'0'),
-        String(d.getDate()).padStart(2,'0')
-      ].join('');
+      return [d.getFullYear(), String(d.getMonth()+1).padStart(2,'0'), String(d.getDate()).padStart(2,'0')].join('');
     };
 
     function setEstado(ok, msg){
-      const el = $('#estado');
-      el.innerHTML = ok ? `<span class="ok">✅ ${msg||'Válido'}</span>` :
-                          `<span class="bad">❌ ${msg||'No registrado'}</span>`;
+      $('#estado').innerHTML = ok ? `<span class="ok">✅ ${msg||'Válido'}</span>`
+                                  : `<span class="bad">❌ ${msg||'No registrado'}</span>`;
     }
 
     function updatePills(){
       $('#pillTotal').textContent    = `${picks.length} válidos totales`;
       $('#pillUnicos').textContent   = `${counts.size} válidos únicos`;
-      const invTotal = invalidPicks.length;
-      $('#pillInvalidos').textContent  = `${invTotal} inválidos`;
+      $('#pillInvalidos').textContent  = `${invalidPicks.length} inválidos`;
       $('#pillInvalidos2').textContent = `${invalidCounts.size} códigos`;
     }
 
@@ -204,34 +191,55 @@
       }
     }
 
-    function addValido(inputCode){
-      const key = norm(inputCode);
-      if (!key) return;
-      const info = codeInfo.get(key);
-      if (!info){
-        addInvalido(inputCode);
-        return;
-      }
-      // sumar válido
-      picks.push(key);
-      counts.set(key, (counts.get(key)||0) + 1);
+    // Detecta formato "ART!COLOR!TALLE" y devuelve {articulo,color,talle} normalizados
+    function parseComposite(raw){
+      const txt = norm(raw);
+      if (!txt.includes('!')) return null;
+      const parts = txt.split('!').map(p=>p.trim()).filter(Boolean);
+      if (parts.length !== 3) return null;
+      return { articulo: parts[0], color: parts[1], talle: parts[2] };
+    }
 
-      setEstado(true, `${info.codigo} OK — ${info.articulo} / ${info.color} / ${info.talle}`);
-      updatePills();
-      renderTablaValidos();
+    function addValido(inputCode){
+      const keyCode = norm(inputCode);
+      if (!keyCode) return;
+
+      // 1) Directo por código (columna "codigo")
+      let info = codeInfo.get(keyCode);
+      if (info){
+        picks.push(keyCode);
+        counts.set(keyCode, (counts.get(keyCode)||0) + 1);
+        setEstado(true, `${info.codigo} OK — ${info.articulo} / ${info.color} / ${info.talle}`);
+        updatePills(); renderTablaValidos(); return;
+      }
+
+      // 2) Formato compuesto "ART!COLOR!TALLE"  -> buscar combinación
+      const comp = parseComposite(inputCode);
+      if (comp){
+        const comboKey = `${comp.articulo}|${comp.color}|${comp.talle}`;
+        const mappedCode = comboToCode.get(comboKey);
+        if (mappedCode){
+          const info2 = codeInfo.get(mappedCode); // existe por construcción
+          picks.push(mappedCode);
+          counts.set(mappedCode, (counts.get(mappedCode)||0) + 1);
+          setEstado(true, `${info2.codigo} OK — ${info2.articulo} / ${info2.color} / ${info2.talle}`);
+          updatePills(); renderTablaValidos(); return;
+        }
+      }
+
+      // 3) No encontrado => inválido
+      addInvalido(inputCode);
     }
 
     function addInvalido(inputCode){
-      const key = norm(inputCode);
-      invalidPicks.push(key);
-      invalidCounts.set(key, (invalidCounts.get(key)||0) + 1);
+      const k = norm(inputCode);
+      invalidPicks.push(k);
+      invalidCounts.set(k, (invalidCounts.get(k)||0) + 1);
       setEstado(false, `${inputCode} no está registrado`);
-      updatePills();
-      renderTablaInvalidos();
+      updatePills(); renderTablaInvalidos();
     }
 
     function processRawInput(raw){
-      // separadores: Enter, coma, punto y coma, tab o espacios múltiples
       const tokens = raw.split(/[\n,;\t ]+/).map(t=>t.trim()).filter(Boolean);
       for(const t of tokens) addValido(t);
     }
@@ -243,12 +251,8 @@
         const lines = text.split(/\r?\n/).filter(Boolean);
         if (lines.length <= 1) { setEstado(false, 'equivalencias.csv vacío'); return; }
 
-        // detectar índices por header
         const header = lines[0].split(';').map(c => c.replace(/^"|"$|(\r)/g,'').trim().toLowerCase());
-        const idx = (name, fallback) => {
-          const i = header.indexOf(name);
-          return i >= 0 ? i : fallback;
-        };
+        const idx = (name, fb) => { const i = header.indexOf(name); return i >= 0 ? i : fb; };
         const iCodigo   = idx('codigo',   0);
         const iArticulo = idx('articulo', 1);
         const iColor    = idx('color',    2);
@@ -260,40 +264,54 @@
           const articulo = cols[iArticulo] ?? '';
           const color    = cols[iColor]    ?? '';
           const talle    = cols[iTalle]    ?? '';
-          const key = norm(codigo);
-          if (!key) continue;
-          codeInfo.set(key, { codigo, articulo, color, talle });
+          const keyCode  = norm(codigo);
+          if (!keyCode) continue;
+          const info = { codigo, articulo, color, talle };
+          codeInfo.set(keyCode, info);
+
+          // índice por combinación (normalizada)
+          const comboKey = `${norm(articulo)}|${norm(color)}|${norm(talle)}`;
+          // si hay duplicados de combinación, mantenemos el primero
+          if (!comboToCode.has(comboKey)) comboToCode.set(comboKey, keyCode);
         }
         setEstado(false, 'Base cargada. Escaneá para validar.');
       })
-      .catch(() => {
-        setEstado(false, 'Error al cargar equivalencias.csv');
-      });
+      .catch(() => setEstado(false, 'Error al cargar equivalencias.csv'));
 
     // ========= Interacción =========
     const scan = $('#scan');
 
     scan.addEventListener('keydown', (e)=> {
-      if (e.key === 'Enter'){
-        e.preventDefault();
-        $('#confirmar').click();
-      }
+      if (e.key === 'Enter'){ e.preventDefault(); $('#confirmar').click(); }
     });
 
     scan.addEventListener('input', ()=>{
-      const key = norm(scan.value);
-      if (!key){ setEstado(false,'Pendiente'); return; }
-      const info = codeInfo.get(key);
-      if (info) setEstado(true, `Posible válido — ${info.articulo} / ${info.color} / ${info.talle}`);
-      else setEstado(false, 'No registrado');
+      const val = scan.value;
+      if (!val.trim()){ setEstado(false,'Pendiente'); return; }
+
+      // Previsualización: intenta resolver directo o por combinación
+      const direct = codeInfo.get(norm(val));
+      if (direct){
+        setEstado(true, `Posible válido — ${direct.articulo} / ${direct.color} / ${direct.talle}`);
+        return;
+      }
+      const comp = parseComposite(val);
+      if (comp){
+        const mapped = comboToCode.get(`${comp.articulo}|${comp.color}|${comp.talle}`);
+        if (mapped){
+          const info = codeInfo.get(mapped);
+          setEstado(true, `Posible válido — ${info.articulo} / ${info.color} / ${info.talle}`);
+          return;
+        }
+      }
+      setEstado(false, 'No registrado');
     });
 
     $('#confirmar').addEventListener('click', ()=>{
       const raw = scan.value;
       if (!raw.trim()) return;
       processRawInput(raw);
-      scan.value = '';
-      scan.focus();
+      scan.value = ''; scan.focus();
     });
 
     // ======== Descargas ========
@@ -322,7 +340,7 @@
       a.remove();
     }
 
-    // Descargar válidos (historial con repetidos)
+    // Válidos (historial con repetidos; siempre se exporta el CÓDIGO real de la base)
     $('#descargarValidos').addEventListener('click', ()=>{
       if (picks.length === 0) return alert('No hay códigos válidos pickeados.');
       const meta = requireMeta(); if (!meta) return;
@@ -330,7 +348,7 @@
       downloadTXT(picks, filename);
     });
 
-    // Descargar inválidos (historial con repetidos)
+    // Inválidos (historial con repetidos)
     $('#descargarInvalidos').addEventListener('click', ()=>{
       if (invalidPicks.length === 0) return alert('No hay códigos inválidos.');
       const meta = requireMeta(); if (!meta) return;
