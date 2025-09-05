@@ -191,11 +191,10 @@ function parseLooseTriplet(s){
   return null;
 }
 
-// =====================
-// Autoconfirmar (sin ENTER físico) y corte de concatenados
-// =====================
-const SCAN_IDLE_MS = 120;   // 80–180 ms va bien en Zebra
-let scanIdleTimer = null;
+// Autoconfirmar (sin ENTER físico)
+const SCAN_IDLE_MS = 120;   // definila UNA vez
+let scanIdleTimer = null;   // definila UNA vez
+
 
 // Si el lector pegó N veces el mismo código sin separadores: "ABC ABC" sin separadores → repetido
 function splitIfRepeated(raw){
@@ -412,10 +411,6 @@ scan.addEventListener('keydown', e => {
     scan.value=''; scan.focus();
   }
 });
-
-// Preview + autoconfirmar por inactividad (sin ENTER físico)
-const SCAN_IDLE_MS = 120;
-let scanIdleTimer = null;
 
 scan.addEventListener('input', ()=>{
   const val = scan.value;
