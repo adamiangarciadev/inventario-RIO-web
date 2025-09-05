@@ -39,11 +39,12 @@ const COLOR_ALIASES = {
   'S':'SURTIDO','SUR':'SURTIDO',
   'U':'UNICO','UN':'UNICO','UNQ':'UNICO',
   'N':'NEGRO','NE':'NEGRO','BK':'NEGRO',
-  'B':'BLANCO','BL':'BLANCO','BLA':'BLANCO','WH':'BLANCO',
+  'B':'BLANCO','BL':'BLANCO','BLA':'BLANCO','WH':'BLANCO','BCO':'BLANCO',
   'A':'AZUL','AZ':'AZUL',
   'R':'ROJO','RO':'ROJO',
   'V':'VERDE','VE':'VERDE',
-  'GR':'GRIS','GRA':'GRIS',
+  'GR':'GRIS','GRA':'GRIS','GRIS':'GRIS',
+  'AL':'ALMENDRA','ALM':'ALMENDRA','ALMENDRA':'ALMENDRA',
   'CE':'CELESTE','CR':'CRUDO',
   'NA':'NATURAL','NU':'NUDE',
   'BE':'BEIGE','MA':'MARRON','LI':'LILA',
@@ -111,8 +112,22 @@ function renderTablaInvalidos(){
 }
 
 // =====================
-// Resolución alias/prefijos
+// Resolución de claves (artículo, color, talle)
 // =====================
+function resolveArtKey(rawArt){
+  // Permite que "2000" empareje con "61-2000" y "2000/E" con "61-2000E"
+  const kIn = keyify(rawArt);         // "2000" → "2000", "2000/E" → "2000E"
+  if (artColors.has(kIn)) return kIn;
+
+  const keys = [...artColors.keys()];
+  const ends = keys.filter(k => k.endsWith(kIn));     // ...612000E → 2000E
+  if (ends.length === 1) return ends[0];
+
+  const includes = keys.filter(k => k.includes(kIn)); // por si hay prefijos/códigos
+  if (includes.length === 1) return includes[0];
+
+  return kIn; // fallback
+}
 function resolveColorKey(artKey, rawColor){
   const set = artColors.get(artKey) || new Set();
   const alias = COLOR_ALIASES[normUp(rawColor)];
@@ -147,17 +162,46 @@ function parseComposite(s){
   return { art: parts[0], col: parts[1], tal: parts[2] };
 }
 
+// "ART TALLE COLOR", "ART/E TALLE COLOR" o "ART/E{TALLE} COLOR"
+function parseLooseTriplet(s){
+  const txt = normUp(s).replace(/\s+/g,' ').trim();
+  if (!txt) return null;
+
+  const parts = txt.split(' ');
+
+  // Caso 1: tres tokens -> [ART, TALLE, COLOR]
+  if (parts.length === 3){
+    const [art, tal, col] = parts;
+    if (/^[A-Z0-9/.\-]+$/.test(art) && /^\d{1,4}$/.test(tal)){
+      return { art, tal, col };
+    }
+  }
+
+  // Caso 2: dos tokens -> ["ART/E{TALLE}", "COLOR"]
+  if (parts.length === 2){
+    const [artAndTal, col] = parts;
+    const m = artAndTal.match(/^(.+?)(?:E)?(\d{1,4})$/);
+    if (m){
+      const art = m[1].replace(/\s+$/,'');
+      const tal = m[2];
+      return { art, tal, col };
+    }
+  }
+
+  return null;
+}
+
 // =====================
 // Autoconfirmar (sin ENTER físico) y corte de concatenados
 // =====================
 const SCAN_IDLE_MS = 120;   // 80–180 ms va bien en Zebra
 let scanIdleTimer = null;
 
-// Si el lector pegó N veces el mismo código sin separadores: "ABC123ABC123" → ["ABC123","ABC123"]
+// Si el lector pegó N veces el mismo código sin separadores: "ABC ABC" sin separadores → repetido
 function splitIfRepeated(raw){
   const s = raw.trim();
   if (!s) return [];
-  if (/[\n,;\t ]+/.test(s)) return [s]; // ya hay separadores: lo maneja processRawInput
+  if (/[\n,;\t]/.test(s)) return [s]; // separadores “duros” ya presentes
   const m = s.match(/^(.+?)\1+$/);
   if (m){
     const unit = m[1];
@@ -173,7 +217,7 @@ function addValido(input){
 
   const key = normUp(raw);
 
-  // 1) Código directo
+  // 1) Código directo (sin espacios) o con espacios si coincide exactamente
   const infoDirect = codeInfo.get(key);
   if (infoDirect){
     picks.push(key);
@@ -185,7 +229,7 @@ function addValido(input){
   // 2) ART!COLOR!TALLE
   const comp = parseComposite(raw);
   if (comp){
-    const artKey = keyify(comp.art);
+    const artKey = resolveArtKey(comp.art);
     const colorKey = resolveColorKey(artKey, comp.col);
     const talleKey = resolveTalleKey(artKey, comp.tal);
     const mappedKey = comboToCode.get(`${artKey}|${colorKey}|${talleKey}`);
@@ -198,7 +242,23 @@ function addValido(input){
     }
   }
 
-  // 3) inválido
+  // 3) "ART TALLE COLOR" / "ART/E{TALLE} COLOR"
+  const loose = parseLooseTriplet(raw);
+  if (loose){
+    const artKey = resolveArtKey(loose.art);
+    const colorKey = resolveColorKey(artKey, loose.col);
+    const talleKey = resolveTalleKey(artKey, loose.tal);
+    const mappedKey = comboToCode.get(`${artKey}|${colorKey}|${talleKey}`);
+    if (mappedKey){
+      const info = codeInfo.get(mappedKey);
+      picks.push(mappedKey);
+      counts.set(mappedKey, (counts.get(mappedKey)||0)+1);
+      setEstado(true, `${info.codigo} OK — ${info.articulo} / ${info.color} / ${info.talle}`);
+      updatePills(); renderTablaValidos(); return;
+    }
+  }
+
+  // 4) inválido
   const invKey = normUp(raw);
   invalidPicks.push(invKey);
   invalidCounts.set(invKey, (invalidCounts.get(invKey)||0)+1);
@@ -209,19 +269,24 @@ function addValido(input){
 }
 
 function processRawInput(raw){
-  // 1) tokens por separadores comunes
-  let tokens = raw.split(/[\n,;\t ]+/).map(t=>t.trim()).filter(Boolean);
-
-  // 2) si no había separadores y parece concatenado repetido, partir
-  if (tokens.length === 1) {
-    const maybe = splitIfRepeated(raw);
-    if (maybe.length > 1) tokens = maybe;
+  // IMPORTANTE: NO partir por espacio (los códigos pueden tener espacios).
+  // Solo consideramos separadores “duros”: salto de línea, coma, punto y coma, tab.
+  let chunks;
+  if (/[\n,;\t]/.test(raw)) {
+    chunks = raw.split(/[\n,;\t]+/).map(t=>t.trim()).filter(Boolean);
+  } else {
+    chunks = [raw];
   }
 
-  // 3) filtrar lecturas ridículamente cortas
-  const valid = tokens.filter(t => t.length >= 2);
-  const dropped = tokens.filter(t => t.length > 0 && t.length < 2);
+  // Si todo vino pegado sin separadores y parece repetición exacta, partir en unidades
+  if (chunks.length === 1) {
+    const maybe = splitIfRepeated(chunks[0]);
+    if (maybe.length > 1) chunks = maybe;
+  }
 
+  // Descartar lecturas ridículas (1 carácter)
+  const valid = chunks.filter(t => t.length >= 2);
+  const dropped = chunks.filter(t => t.length > 0 && t.length < 2);
   if (dropped.length > 0){
     setEstado(false, 'Lectura incompleta: reintentar el escaneo');
     playErrorBeep(); flashError();
@@ -348,34 +413,53 @@ scan.addEventListener('keydown', e => {
   }
 });
 
-// Preview + autoconfirmar por inactividad
+// Preview + autoconfirmar por inactividad (sin ENTER físico)
+const SCAN_IDLE_MS = 120;
+let scanIdleTimer = null;
+
 scan.addEventListener('input', ()=>{
   const val = scan.value;
 
-  // ---- Preview (opcional) ----
   if (!val.trim()){ setEstado(false,'Pendiente'); return; }
+
+  // Preview: directo
   const direct = codeInfo.get(normUp(val));
   if (direct){
     setEstado(true, `Posible válido — ${direct.articulo} / ${direct.color} / ${direct.talle}`);
   } else {
+    // Preview: ART!COLOR!TALLE
+    let shown = false;
     const comp = parseComposite(val);
     if (comp){
-      const artKey = keyify(comp.art);
+      const artKey = resolveArtKey(comp.art);
       const colorKey = resolveColorKey(artKey, comp.col);
       const talleKey = resolveTalleKey(artKey, comp.tal);
       const mapped = comboToCode.get(`${artKey}|${colorKey}|${talleKey}`);
       if (mapped){
         const info = codeInfo.get(mapped);
         setEstado(true, `Posible válido — ${info.articulo} / ${info.color} / ${info.talle}`);
-      } else {
-        setEstado(false,'No registrado');
+        shown = true;
       }
-    } else {
-      setEstado(false,'No registrado');
     }
+    // Preview: ART TALLE COLOR / ART/E{TALLE} COLOR
+    if (!shown){
+      const loose = parseLooseTriplet(val);
+      if (loose){
+        const artKey = resolveArtKey(loose.art);
+        const colorKey = resolveColorKey(artKey, loose.col);
+        const talleKey = resolveTalleKey(artKey, loose.tal);
+        const mapped = comboToCode.get(`${artKey}|${colorKey}|${talleKey}`);
+        if (mapped){
+          const info = codeInfo.get(mapped);
+          setEstado(true, `Posible válido — ${info.articulo} / ${info.color} / ${info.talle}`);
+          shown = true;
+        }
+      }
+    }
+    if (!shown) setEstado(false,'No registrado');
   }
 
-  // ---- Autoconfirmar tras pausa corta (no hace falta Enter) ----
+  // Autoconfirmar por pausa
   if (scanIdleTimer) clearTimeout(scanIdleTimer);
   scanIdleTimer = setTimeout(()=>{
     const raw = scan.value;
@@ -411,32 +495,8 @@ $('#descargarValidos').addEventListener('click', ()=>{
   const out = picks.map(k => (codeInfo.get(k)?.codigo) || k);
   downloadTXT(out, `PICKEO_${yyyymmdd()}_${m.piso}_${m.sector}_${m.responsable}.txt`);
 });
-
 $('#descargarInvalidos').addEventListener('click', ()=>{
   if (invalidPicks.length===0) return alert('No hay códigos inválidos.');
   const m=requireMeta(); if(!m) return;
   downloadTXT(invalidPicks, `INVALIDOS_${yyyymmdd()}_${m.piso}_${m.sector}_${m.responsable}.txt`);
 });
-
-/* --------- (Opcional) Corte por longitud fija ----------
-   Si tus códigos de barra tienen LONGITUD FIJA (ej. 15),
-   podés partir concatenados así:
-
-function splitFixed(raw, size){
-  const s = raw.trim();
-  if (!s || s.length % size !== 0) return null;
-  const out = [];
-  for (let i=0;i<s.length;i+=size) out.push(s.slice(i,i+size));
-  return out;
-}
-
-Y en processRawInput, antes del paso (2):
-  if (tokens.length === 1) {
-    const fixed = splitFixed(raw, 15); // <-- poné el tamaño real
-    if (fixed) tokens = fixed;
-    else {
-      const maybe = splitIfRepeated(raw);
-      if (maybe.length > 1) tokens = maybe;
-    }
-  }
--------------------------------------------------------- */
