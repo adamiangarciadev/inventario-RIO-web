@@ -384,7 +384,7 @@
     }
   }
 
-  async function loadPrimary(){ try{ await loadCSVGeneric('equivalencias.csv', true); } catch(e){} }
+  async function loadPrimary(){ try{ await loadCSVGeneric('equivalencia.csv', true); } catch(e){} }
   async function loadSecondary(){ try{ await loadCSVGeneric('equivalencias_secundarias.csv', false); } catch(e){} }
 
   // =====================
