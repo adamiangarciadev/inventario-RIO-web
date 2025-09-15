@@ -1,500 +1,414 @@
-(() => {
-  // =====================
-  // Utilidades básicas
-  // =====================
-  const normUp = (s) => (s ?? '').toString()
-    .normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
-    .trim().toUpperCase();
-  const keyify = (s) => normUp(s).replace(/[^A-Z0-9]/g,'');
-  const $ = (s) => document.querySelector(s);
+/* =========================
+   app.js — Pickeo rápido Zebra (con subida a Drive)
+   ========================= */
 
-  // =====================
-  // Audio + feedback visual (errores)
-  // =====================
-  let audioCtx = null;
-  function playErrorBeep(){
-    try{
-      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const o = audioCtx.createOscillator();
-      const g = audioCtx.createGain();
-      o.type = 'square';
-      o.frequency.value = 220;
-      g.gain.setValueAtTime(0.001, audioCtx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.25, audioCtx.currentTime + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.20);
-      o.connect(g); g.connect(audioCtx.destination);
-      o.start(); o.stop(audioCtx.currentTime + 0.22);
-    }catch(e){}
+/* ---------- CONFIG DRIVE ---------- */
+const DRIVE_WEBAPP_URL = 'https://adamiangarciadev.github.io/inventario-RIO-web/'; // ej: https://script.google.com/macros/s/XXXXX/exec
+const DRIVE_FOLDER_ID  = '1Bpj36KpYGbn2ru3mYF5G5m9-NoZw6DVL'; // tu carpeta destino
+const DRIVE_TOKEN      = '6a006fb19100c33059df2aeab6b64b970941b61e'; // el mismo que en Code.gs
+const TXT_SEPARATOR    = ';';  // ';' o ',' o '\t'
+const TXT_INCLUDE_HEADER = true; // true para agregar encabezado en el TXT
+
+/* ---------- Helpers DOM ---------- */
+const $  = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+const scanInput   = $('#scan');
+const estadoEl    = $('#estado');
+const pillbarEl   = $('#pillbar');
+const tbodyOk     = $('#tablaValidos');
+const tbodyBad    = $('#tablaInvalidos');
+
+/* ---------- Estado ---------- */
+// Mapa maestro: key => {codigo, articulo, color, talle}
+const codeInfo = new Map();
+
+// Contadores y listas
+const counts        = new Map(); // key => qty
+const invalidCounts = new Map(); // raw => qty
+let totalOk = 0, totalBad = 0;
+
+// Parámetros de UX/Performance
+const SCAN_IDLE_MS = 90; // Confirmar si no viene Enter (ideal DataWedge)
+let idleTimer = null;
+
+// Buffer opcional por ráfagas (p.ej. pegado)
+const queue = [];
+let rafFlush = null;
+
+// Wake Lock para que no se apague la pantalla
+let wakeLock = null;
+
+/* =========================================
+   1) CARGA DE EQUIVALENCIAS (Web Worker)
+   ========================================= */
+function ingestRow(codigo, articulo, color, talle) {
+  const norm = (s) =>
+    (s ?? '')
+      .toString()
+      .trim()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g,''); // sin tildes
+
+  codigo  = norm(codigo);
+  articulo= norm(articulo);
+  color   = norm(color);
+  talle   = norm(talle);
+
+  // Key primaria
+  const key = `${codigo}|${color}|${talle}`;
+  codeInfo.set(key, { codigo, articulo, color, talle });
+
+  // Índices alternativos
+  if (!codeInfo.has(codigo)) {
+    codeInfo.set(codigo, { codigo, articulo, color, talle });
   }
-  function flashError(){
-    const el = $('#estado'); if(!el) return;
-    const prev = el.style.backgroundColor;
-    el.style.backgroundColor = 'rgba(220,38,38,0.12)';
-    setTimeout(()=>{ el.style.backgroundColor = prev || ''; }, 160);
+  const triple = `${articulo}!${color}!${talle}`;
+  if (!codeInfo.has(triple)) {
+    codeInfo.set(triple, { codigo, articulo, color, talle });
+  }
+}
+
+async function loadPrimaryWorker() {
+  return new Promise((resolve) => {
+    try {
+      const w = new Worker('equivalencia.worker.js');
+      w.onmessage = (e) => {
+        const msg = e.data;
+        if (msg.type === 'row') {
+          ingestRow(msg.codigo, msg.articulo, msg.color, msg.talle);
+        } else if (msg.type === 'done') {
+          w.terminate(); resolve();
+        }
+      };
+      w.postMessage('equivalencia.csv');
+    } catch (err) {
+      console.error('Worker error:', err);
+      resolve();
+    }
+  });
+}
+
+/* =========================================
+   2) RENDER IN-PLACE (sin repintar toda la tabla)
+   ========================================= */
+function rowIdFor(key) { return `row_${hashKey(key)}`; }
+function invRowIdFor(code) { return `inv_${hashKey(code)}`; }
+function hashKey(s) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
+  }
+  return (h >>> 0).toString(16);
+}
+
+function ensureValidoRow(key) {
+  let tr = document.getElementById(rowIdFor(key));
+  if (tr) return tr;
+  const info = codeInfo.get(key) || { codigo: key, articulo: '-', color: '-', talle: '-' };
+  tr = document.createElement('tr');
+  tr.id = rowIdFor(key);
+  tr.innerHTML = `
+    <td style="background:#fff"></td>
+    <td>${escapeHtml(info.codigo)}</td>
+    <td>${escapeHtml(info.articulo)}</td>
+    <td>${escapeHtml(info.color)}</td>
+    <td>${escapeHtml(info.talle)}</td>
+    <td class="count">0</td>
+  `;
+  tbodyOk.appendChild(tr);
+  renumerarTabla(tbodyOk);
+  return tr;
+}
+function ensureInvalidoRow(code) {
+  let tr = document.getElementById(invRowIdFor(code));
+  if (tr) return tr;
+  tr = document.createElement('tr');
+  tr.id = invRowIdFor(code);
+  tr.innerHTML = `
+    <td style="background:#fff"></td>
+    <td>${escapeHtml(code)}</td>
+    <td class="count">0</td>
+  `;
+  tbodyBad.appendChild(tr);
+  renumerarTabla(tbodyBad);
+  return tr;
+}
+function renumerarTabla(tbody) {
+  let i = 1;
+  $$('#' + tbody.id + ' tr').forEach((r) => {
+    const first = r.firstElementChild;
+    if (first) first.textContent = i++;
+  });
+}
+function bumpCountCell(tr, qty) {
+  const cell = tr.querySelector('.count');
+  if (cell) cell.textContent = qty;
+}
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'",'&#039;');
+}
+
+/* =========================================
+   3) LÓGICA DE ESCANEO
+   ========================================= */
+function setEstado(ok, msg) {
+  estadoEl.textContent = msg || (ok ? 'Listo.' : 'Listo, sin base.');
+  estadoEl.style.color = ok ? '#2e7d32' : '#b71c1c';
+}
+function updatePills() {
+  pillbarEl.innerHTML = `
+    <div class="pill">Total: ${totalOk + totalBad}</div>
+    <div class="pill">Válidos: ${totalOk}</div>
+    <div class="pill">Inválidos: ${totalBad}</div>
+    <div class="pill">Items distintos: ${counts.size}</div>
+  `;
+}
+function commitScan(rawValue) {
+  const val = (rawValue ?? '').trim();
+  if (!val) return;
+
+  let key = null;
+  if (codeInfo.has(val)) {
+    key = val;
+  } else {
+    if (val.includes('!') || val.includes('|')) {
+      const t = val.replace(/\s+/g, '');
+      if (codeInfo.has(t)) key = t;
+    }
+    if (!key) {
+      const flat = val.toUpperCase().replace(/\s+/g, '');
+      if (codeInfo.has(flat)) key = flat;
+    }
   }
 
-  // =====================
-  // Mapeos y estado
-  // =====================
-  const COLOR_ALIASES = {
-    'S':'SURTIDO','SUR':'SURTIDO',
-    'U':'UNICO','UN':'UNICO','UNQ':'UNICO',
-    'N':'NEGRO','NE':'NEGRO','BK':'NEGRO',
-    'B':'BLANCO','BL':'BLANCO','BLA':'BLANCO','WH':'BLANCO','BCO':'BLANCO',
-    'A':'AZUL','AZ':'AZUL',
-    'R':'ROJO','RO':'ROJO',
-    'V':'VERDE','VE':'VERDE',
-    'GR':'GRIS','GRA':'GRIS','GRIS':'GRIS',
-    'AL':'ALMENDRA','ALM':'ALMENDRA','ALMENDRA':'ALMENDRA',
-    'CE':'CELESTE','CR':'CRUDO',
-    'NA':'NATURAL','NU':'NUDE',
-    'BE':'BEIGE','MA':'MARRON','LI':'LILA',
-    'AM':'AMARILLO','BO':'BORDO','FU':'FUCSIA'
-  };
-  const TALLE_ALIASES = {'U':'UNICO','UN':'UNICO','UNQ':'UNICO'};
-
-  let picks = [];                // válidos (key) con repetidos
-  let counts = new Map();        // key -> cantidad
-  let invalidPicks = [];         // inválidos con repetidos
-  let invalidCounts = new Map(); // inválidos únicos
-
-  // Índices
-  const codeInfo = new Map();    // key -> {codigo, articulo, color, talle}
-  const comboToCode = new Map(); // artKey|colorKey|talleKey -> key
-  const artColors = new Map();   // artKey -> Set(colorKey)
-  const artTalles = new Map();   // artKey -> Set(talleKey)
-
-  // =====================
-  // Helpers UI
-  // =====================
-  function yyyymmdd(){ const d=new Date(); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`; }
-  function sanitizeForFile(s){ return normUp(s).replace(/[^A-Z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
-  function setEstado(ok,msg){ $('#estado').innerHTML = ok ? `<span class="ok">✅ ${msg||'Válido'}</span>` : `<span class="bad">❌ ${msg||'No registrado'}</span>`; }
-  function updatePills(){
-    $('#pillTotal').textContent    = `${picks.length} válidos totales`;
-    $('#pillUnicos').textContent   = `${counts.size} válidos únicos`;
-    $('#pillInvalidos').textContent  = `${invalidPicks.length} inválidos`;
-    $('#pillInvalidos2').textContent = `${invalidCounts.size} códigos`;
+  if (key) {
+    const newQty = (counts.get(key) || 0) + 1;
+    counts.set(key, newQty);
+    totalOk++;
+    bumpCountCell(ensureValidoRow(key), newQty);
+    okBeep();
+  } else {
+    const newBad = (invalidCounts.get(val) || 0) + 1;
+    invalidCounts.set(val, newBad);
+    totalBad++;
+    bumpCountCell(ensureInvalidoRow(val), newBad);
+    errorBeep();
   }
-  function sortedEntries(mapObj){
-    const arr = [...mapObj.entries()];
-    arr.sort((a,b)=>{
-      const ia = codeInfo.get(a[0]) || {};
-      const ib = codeInfo.get(b[0]) || {};
-      return (ia.articulo||'').localeCompare(ib.articulo||'')
-          || (ia.color||'').localeCompare(ib.color||'')
-          || (ia.talle||'').localeCompare(ib.talle||'');
+
+  updatePills();
+  stickFocusSoon();
+  scanInput.select();
+}
+function handleInputChange() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    idleTimer = null;
+    commitScan(scanInput.value);
+    scanInput.value = '';
+  }, SCAN_IDLE_MS);
+}
+function handleKeydown(e) {
+  if (e.key === 'Enter') {
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    commitScan(scanInput.value);
+    scanInput.value = '';
+    e.preventDefault();
+  }
+}
+/* Batch (pegar varias líneas) */
+function enqueue(v) {
+  if (!v) return;
+  queue.push(v);
+  if (!rafFlush) rafFlush = requestAnimationFrame(flushQueue);
+}
+function flushQueue() {
+  rafFlush = null;
+  const batch = queue.splice(0, queue.length);
+  for (const v of batch) commitScan(v);
+}
+
+/* =========================================
+   4) AUDIO (beeps)
+   ========================================= */
+let audioCtx = null, okOsc = null, errOsc = null, okGain = null, errGain = null;
+function getCtx() { return audioCtx || (audioCtx = new (window.AudioContext || window.webkitAudioContext)()); }
+function okBeep() {
+  try {
+    const ctx = getCtx();
+    okOsc?.stop(); okGain?.disconnect();
+    okOsc = ctx.createOscillator(); okGain = ctx.createGain();
+    okOsc.frequency.value = 880; okGain.gain.value = 0.05;
+    okOsc.connect(okGain).connect(ctx.destination);
+    okOsc.start(); setTimeout(()=>{ okOsc.stop(); }, 90);
+  } catch {}
+}
+function errorBeep() {
+  try {
+    const ctx = getCtx();
+    errOsc?.stop(); errGain?.disconnect();
+    errOsc = ctx.createOscillator(); errGain = ctx.createGain();
+    errOsc.frequency.value = 220; errGain.gain.value = 0.08;
+    errOsc.connect(errGain).connect(ctx.destination);
+    errOsc.start(); setTimeout(()=>{ errOsc.stop(); }, 140);
+  } catch {}
+}
+
+/* =========================================
+   5) FOCO PEGADO + WAKE LOCK
+   ========================================= */
+function stickFocus() {
+  if (document.activeElement !== scanInput) scanInput.focus();
+}
+function stickFocusSoon() { setTimeout(stickFocus, 0); }
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible' && !wakeLock) {
+          try { wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+        }
+      });
+    }
+  } catch {}
+}
+
+/* =========================================
+   6) EXPORTAR / GUARDAR TXT
+   ========================================= */
+function buildTxt() {
+  const sep = TXT_SEPARATOR;
+  const rows = [];
+  if (TXT_INCLUDE_HEADER) rows.push(['codigo','articulo','color','talle','cantidad'].join(sep));
+  // Exportar en orden por código
+  const entries = Array.from(counts.entries());
+  entries.sort((a,b)=>{
+    const ia = codeInfo.get(a[0]) || {}; const ib = codeInfo.get(b[0]) || {};
+    return String(ia.codigo).localeCompare(String(ib.codigo));
+  });
+  for (const [key, qty] of entries) {
+    const info = codeInfo.get(key) || { codigo:key, articulo:'-', color:'-', talle:'-' };
+    rows.push([info.codigo, info.articulo, info.color, info.talle, qty].map(v=>String(v ?? '')).join(sep));
+  }
+  return rows.join('\n');
+}
+function makeFilename() {
+  const d = new Date();
+  const pad = (n)=> String(n).padStart(2,'0');
+  const stamp = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  return `picking_${stamp}.txt`;
+}
+async function saveTxtToDrive() {
+  try {
+    const filename = makeFilename();
+    const content  = buildTxt();
+    setEstado(false, 'Subiendo a Drive…');
+
+    if (!DRIVE_WEBAPP_URL || DRIVE_WEBAPP_URL.includes('PON_AQUI')) {
+      throw new Error('Falta configurar DRIVE_WEBAPP_URL');
+    }
+
+    // Enviar como x-www-form-urlencoded (simple request, sin preflight)
+    const body = new URLSearchParams({
+      token:    DRIVE_TOKEN,
+      filename: filename,
+      content:  content,
+      folderId: DRIVE_FOLDER_ID
     });
-    return arr;
-  }
-  function renderTablaValidos(){
-    const tb = $('#tablaValidos'); tb.innerHTML = ''; let i=1;
-    for (const [key, qty] of sortedEntries(counts)){
-      const info = codeInfo.get(key) || {codigo:key, articulo:'-', color:'-', talle:'-'};
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td style="background:#fff">${i++}</td>
-                      <td>${info.codigo}</td>
-                      <td>${info.articulo}</td>
-                      <td>${info.color}</td>
-                      <td>${info.talle}</td>
-                      <td class="count">${qty}</td>`;
-      tb.appendChild(tr);
-    }
-  }
-  function renderTablaInvalidos(){
-    const tb = $('#tablaInvalidos'); tb.innerHTML = ''; let i=1;
-    for (const [code, qty] of invalidCounts.entries()){
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td style="background:#fff">${i++}</td>
-                      <td>${code}</td>
-                      <td class="count">${qty}</td>`;
-      tb.appendChild(tr);
-    }
-  }
 
-  // =====================
-  // Resolución de claves (artículo, color, talle)
-  // =====================
-  function resolveArtKey(rawArt){
-    // Permite que "2000" empareje con "61-2000" y "2000/E" con "61-2000E"
-    const kIn = keyify(rawArt); // "2000" → "2000", "2000/E" → "2000E"
-    if (artColors.has(kIn)) return kIn;
+    const res = await fetch(DRIVE_WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body
+    });
 
-    const keys = [...artColors.keys()];
-    const ends = keys.filter(k => k.endsWith(kIn));
-    if (ends.length === 1) return ends[0];
+    // Si tu Apps Script permite CORS (suele hacerlo), leo JSON:
+    let data = null;
+    try { data = await res.json(); } catch { /* si fuese opaque, igual guardó */ }
 
-    const includes = keys.filter(k => k.includes(kIn));
-    if (includes.length === 1) return includes[0];
-
-    return kIn; // fallback
-  }
-  function resolveColorKey(artKey, rawColor){
-    const set = artColors.get(artKey) || new Set();
-    const alias = COLOR_ALIASES[normUp(rawColor)];
-    const kIn = keyify(rawColor);
-    const kAlias = alias ? keyify(alias) : null;
-    if (kAlias && set.has(kAlias)) return kAlias;
-    if (set.has(kIn)) return kIn;
-    const pref = [...set].filter(k => k.startsWith(kIn));
-    if (pref.length === 1) return pref[0];
-    return kIn;
-  }
-  function resolveTalleKey(artKey, rawTalle){
-    const set = artTalles.get(artKey) || new Set();
-    const alias = TALLE_ALIASES[normUp(rawTalle)];
-    const kIn = keyify(rawTalle);
-    const kAlias = alias ? keyify(alias) : null;
-    if (kAlias && set.has(kAlias)) return kAlias;
-    if (set.has(kIn)) return kIn;
-    const pref = [...set].filter(k => k.startsWith(kIn));
-    if (pref.length === 1) return pref[0];
-    return kIn;
-  }
-
-  // =====================
-  // Parseo de input
-  // =====================
-  function parseComposite(s){
-    const txt = normUp(s);
-    if (!txt.includes('!')) return null;
-    const parts = txt.split('!').map(p => p.trim()).filter(Boolean);
-    if (parts.length !== 3) return null;
-    return { art: parts[0], col: parts[1], tal: parts[2] };
-  }
-  // "ART TALLE COLOR", "ART/E TALLE COLOR" o "ART/E{TALLE} COLOR"
-  function parseLooseTriplet(s){
-    const txt = normUp(s).replace(/\s+/g,' ').trim();
-    if (!txt) return null;
-
-    const parts = txt.split(' ');
-
-    // Caso 1: tres tokens -> [ART, TALLE, COLOR]
-    if (parts.length === 3){
-      const [art, tal, col] = parts;
-      if (/^[A-Z0-9/.\-]+$/.test(art) && /^\d{1,4}$/.test(tal)){
-        return { art, tal, col };
-      }
-    }
-    // Caso 2: dos tokens -> ["ART/E{TALLE}", "COLOR"]
-    if (parts.length === 2){
-      const [artAndTal, col] = parts;
-      const m = artAndTal.match(/^(.+?)(?:E)?(\d{1,4})$/);
-      if (m){
-        const art = m[1].replace(/\s+$/,'');
-        const tal = m[2];
-        return { art, tal, col };
-      }
-    }
-    return null;
-  }
-
-  // =====================
-  // Autoconfirmar (sin ENTER físico) y corte de concatenados
-  // =====================
-  const SCAN_IDLE_MS = 120;   // 80–180 ms va bien en Zebra
-  let scanIdleTimer = null;
-
-  // Si el lector pegó N veces el mismo código sin separadores
-  function splitIfRepeated(raw){
-    const s = raw.trim();
-    if (!s) return [];
-    if (/[\n,;\t]/.test(s)) return [s]; // separadores “duros” ya presentes
-    const m = s.match(/^(.+?)\1+$/);
-    if (m){
-      const unit = m[1];
-      const times = s.length / unit.length;
-      return Array(times).fill(unit);
-    }
-    return [s];
-  }
-
-  function addValido(input){
-    const raw = input.toString().trim();
-    if (!raw) return;
-
-    const key = normUp(raw);
-
-    // 1) Código directo
-    const infoDirect = codeInfo.get(key);
-    if (infoDirect){
-      picks.push(key);
-      counts.set(key, (counts.get(key)||0)+1);
-      setEstado(true, `${infoDirect.codigo} OK — ${infoDirect.articulo} / ${infoDirect.color} / ${infoDirect.talle}`);
-      updatePills(); renderTablaValidos(); return;
-    }
-
-    // 2) ART!COLOR!TALLE
-    const comp = parseComposite(raw);
-    if (comp){
-      const artKey = resolveArtKey(comp.art);
-      const colorKey = resolveColorKey(artKey, comp.col);
-      const talleKey = resolveTalleKey(artKey, comp.tal);
-      const mappedKey = comboToCode.get(`${artKey}|${colorKey}|${talleKey}`);
-      if (mappedKey){
-        const info = codeInfo.get(mappedKey);
-        picks.push(mappedKey);
-        counts.set(mappedKey, (counts.get(mappedKey)||0)+1);
-        setEstado(true, `${info.codigo} OK — ${info.articulo} / ${info.color} / ${info.talle}`);
-        updatePills(); renderTablaValidos(); return;
-      }
-    }
-
-    // 3) "ART TALLE COLOR" / "ART/E{TALLE} COLOR"
-    const loose = parseLooseTriplet(raw);
-    if (loose){
-      const artKey = resolveArtKey(loose.art);
-      const colorKey = resolveColorKey(artKey, loose.col);
-      const talleKey = resolveTalleKey(artKey, loose.tal);
-      const mappedKey = comboToCode.get(`${artKey}|${colorKey}|${talleKey}`);
-      if (mappedKey){
-        const info = codeInfo.get(mappedKey);
-        picks.push(mappedKey);
-        counts.set(mappedKey, (counts.get(mappedKey)||0)+1);
-        setEstado(true, `${info.codigo} OK — ${info.articulo} / ${info.color} / ${info.talle}`);
-        updatePills(); renderTablaValidos(); return;
-      }
-    }
-
-    // 4) inválido
-    const invKey = normUp(raw);
-    invalidPicks.push(invKey);
-    invalidCounts.set(invKey, (invalidCounts.get(invKey)||0)+1);
-    setEstado(false, `${raw} no está registrado`);
-    playErrorBeep();
-    flashError();
-    updatePills(); renderTablaInvalidos();
-  }
-
-  function processRawInput(raw){
-    // NO partir por espacio (los códigos pueden tener espacios).
-    // Solo separadores “duros”: salto de línea, coma, punto y coma, tab.
-    let chunks;
-    if (/[\n,;\t]/.test(raw)) {
-      chunks = raw.split(/[\n,;\t]+/).map(t=>t.trim()).filter(Boolean);
+    if (data?.ok) {
+      setEstado(true, `Guardado en Drive ✔️ (${data.name})`);
+    } else if (res.ok && !data) {
+      // Respuesta opaca/no JSON: asumimos éxito
+      setEstado(true, 'Guardado en Drive ✔️');
     } else {
-      chunks = [raw];
+      throw new Error(data?.error || `HTTP ${res.status}`);
     }
-
-    // Si vino pegado y parece repetición exacta, partir
-    if (chunks.length === 1) {
-      const maybe = splitIfRepeated(chunks[0]);
-      if (maybe.length > 1) chunks = maybe;
-    }
-
-    const valid = chunks.filter(t => t.length >= 2);
-    const dropped = chunks.filter(t => t.length > 0 && t.length < 2);
-    if (dropped.length > 0){
-      setEstado(false, 'Lectura incompleta: reintentar el escaneo');
-      playErrorBeep(); flashError();
-    }
-
-    for (const t of valid) addValido(t);
+  } catch (err) {
+    console.error(err);
+    setEstado(false, `Error subiendo a Drive: ${err.message}`);
   }
-
-  // =====================
-  // Carga de CSVs (robusta)
-  // =====================
-  function detectSep(line){
-    const sc = line.split(';').length;
-    const cc = line.split(',').length;
-    if (sc>cc) return ';';
-    if (cc>sc) return ',';
-    return ';';
+}
+function downloadTxt() {
+  const content = buildTxt();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type: 'text/plain' }));
+  a.download = makeFilename();
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(a.href);
+  a.remove();
+}
+function ensureToolbar() {
+  let bar = document.getElementById('toolbar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'toolbar';
+    bar.style.display = 'flex';
+    bar.style.gap = '8px';
+    bar.style.marginTop = '8px';
+    bar.innerHTML = `
+      <button id="btnSaveDrive">💾 Guardar en Drive</button>
+      <button id="btnDownload">⬇️ Descargar TXT</button>
+    `;
+    // Insertar debajo de la pillbar
+    pillbarEl.parentElement.insertBefore(bar, pillbarEl.nextSibling);
   }
-  function cleanCell(c){ return (c??'').replace(/^\uFEFF/, '').replace(/^"|"$|(\r)/g,'').trim(); }
-  function normHeader(h){
-    return (h ?? '')
-      .normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
-      .toLowerCase().replace(/[^a-z0-9]+/g,'-');
-  }
-  function headerPositions(headerRaw){
-    const header = headerRaw.map(h => normHeader(cleanCell(h)));
-    const wants = {
-      codigo:   ['codigo','c-digo','cod','code','id-codigo'],
-      articulo: ['articulo','art-culo','art','sku','codigo-articulo'],
-      color:    ['color','col'],
-      talle:    ['talle','tal','size']
-    };
-    const pos = {};
-    for (const [k, aliases] of Object.entries(wants)){
-      let idx = -1;
-      for (const a of aliases){
-        const i = header.indexOf(a);
-        if (i >= 0){ idx = i; break; }
-      }
-      if (idx < 0){
-        const i2 = header.findIndex(h => h.startsWith(aliases[0].slice(0,3)));
-        if (i2 >= 0) idx = i2;
-      }
-      pos[k] = idx >= 0 ? idx : null;
-    }
-    return pos;
-  }
+  $('#btnSaveDrive').onclick = saveTxtToDrive;
+  $('#btnDownload').onclick  = downloadTxt;
+}
 
-  function ingestRow(codigo, articulo, color, talle){
-    const key = normUp(codigo);
-    if (!key) return;
+/* =========================================
+   7) BOOTSTRAP
+   ========================================= */
+async function boot() {
+  setEstado(false, 'Cargando base de equivalencias…');
+  await loadPrimaryWorker();
 
-    if (!codeInfo.has(key)) {
-      codeInfo.set(key, { codigo, articulo, color, talle });
-    }
+  const ok = codeInfo.size > 0;
+  setEstado(ok, ok ? 'Base cargada. Escaneá para validar.' : 'No se pudo cargar la base.');
+  updatePills();
+  ensureToolbar(); // <-- agrega los botones
 
-    const artKey = keyify(articulo);
-    const colKey = keyify(color);
-    const talKey = keyify(talle);
+  // Listeners de entrada
+  scanInput.addEventListener('input', handleInputChange, { passive: true });
+  scanInput.addEventListener('keydown', handleKeydown);
 
-    if (!artColors.has(artKey)) artColors.set(artKey, new Set());
-    if (!artTalles.has(artKey)) artTalles.set(artKey, new Set());
-    artColors.get(artKey).add(colKey);
-    artTalles.get(artKey).add(talKey);
-
-    const comboKey = `${artKey}|${colKey}|${talKey}`;
-    if (!comboToCode.has(comboKey)) comboToCode.set(comboKey, key);
-  }
-
-  async function loadCSVGeneric(url, hasHeader=true){
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('fetch-fail');
-    let txt = await resp.text();
-    txt = txt.replace(/^\uFEFF/, '');
-    const lines = txt.split(/\r?\n/).filter(Boolean);
-    if (!lines.length) return;
-
-    const sep = detectSep(lines[0]);
-    if (hasHeader){
-      const headerRaw = lines[0].split(sep).map(cleanCell);
-      const pos = headerPositions(headerRaw);
-      const fallback = (arr, idx, fb) => cleanCell((arr[idx] ?? fb) ?? '');
-
-      for (const line of lines.slice(1)){
-        const cols = line.split(sep).map(cleanCell);
-        const codigo   = pos.codigo   != null ? cols[pos.codigo]   : fallback(cols,0,'');
-        const articulo = pos.articulo != null ? cols[pos.articulo] : fallback(cols,1,'');
-        const color    = pos.color    != null ? cols[pos.color]    : fallback(cols,2,'');
-        const talle    = pos.talle    != null ? cols[pos.talle]    : fallback(cols,3,'');
-        ingestRow(codigo, articulo, color, talle);
-      }
-    }else{
-      for (const line of lines){
-        const cols = line.split(sep).map(cleanCell);
-        const [codigo='', articulo='', color='', talle=''] = cols;
-        ingestRow(codigo, articulo, color, talle);
-      }
-    }
-  }
-
-  async function loadPrimary(){ try{ await loadCSVGeneric('equivalencia.csv', true); } catch(e){} }
-  async function loadSecondary(){ try{ await loadCSVGeneric('equivalencias_secundarias.csv', false); } catch(e){} }
-
-  // =====================
-  // Boot + handlers
-  // =====================
-  (async function boot(){
-    await loadPrimary();
-    await loadSecondary();
-    if (codeInfo.size > 0) setEstado(false,'Base cargada. Escaneá para validar.');
-    else setEstado(false,'No se pudo cargar ninguna equivalencia.');
-  })();
-
-  const scan = $('#scan');
-
-  // Enter manual (si el lector lo envía)
-  scan.addEventListener('keydown', e => {
-    if (e.key==='Enter'){
-      e.preventDefault();
-      const raw = scan.value;
-      if (!raw.trim()) return;
-      processRawInput(raw);
-      scan.value=''; scan.focus();
-    }
+  // Pegar múltiples (líneas separadas)
+  scanInput.addEventListener('paste', (e) => {
+    const text = (e.clipboardData || window.clipboardData).getData('text');
+    if (!text) return;
+    e.preventDefault();
+    const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    for (const ln of lines) enqueue(ln);
+    scanInput.value = '';
   });
 
-  // Preview + autoconfirmar por inactividad (sin ENTER físico)
-  scan.addEventListener('input', ()=>{
-    const val = scan.value;
-
-    if (!val.trim()){ setEstado(false,'Pendiente'); return; }
-
-    // Preview: directo
-    const direct = codeInfo.get(normUp(val));
-    if (direct){
-      setEstado(true, `Posible válido — ${direct.articulo} / ${direct.color} / ${direct.talle}`);
-    } else {
-      let shown = false;
-
-      // Preview: ART!COLOR!TALLE
-      const comp = parseComposite(val);
-      if (comp){
-        const artKey = resolveArtKey(comp.art);
-        const colorKey = resolveColorKey(artKey, comp.col);
-        const talleKey = resolveTalleKey(artKey, comp.tal);
-        const mapped = comboToCode.get(`${artKey}|${colorKey}|${talleKey}`);
-        if (mapped){
-          const info = codeInfo.get(mapped);
-          setEstado(true, `Posible válido — ${info.articulo} / ${info.color} / ${info.talle}`);
-          shown = true;
-        }
-      }
-
-      // Preview: ART TALLE COLOR / ART/E{TALLE} COLOR
-      if (!shown){
-        const loose = parseLooseTriplet(val);
-        if (loose){
-          const artKey = resolveArtKey(loose.art);
-          const colorKey = resolveColorKey(artKey, loose.col);
-          const talleKey = resolveTalleKey(artKey, loose.tal);
-          const mapped = comboToCode.get(`${artKey}|${colorKey}|${talleKey}`);
-          if (mapped){
-            const info = codeInfo.get(mapped);
-            setEstado(true, `Posible válido — ${info.articulo} / ${info.color} / ${info.talle}`);
-            shown = true;
-          }
-        }
-      }
-
-      if (!shown) setEstado(false,'No registrado');
-    }
-
-    // Autoconfirmar por pausa
-    if (scanIdleTimer) clearTimeout(scanIdleTimer);
-    scanIdleTimer = setTimeout(()=>{
-      const raw = scan.value;
-      if (!raw.trim()) return;
-      processRawInput(raw);
-      scan.value = '';
-      scan.focus();
-    }, SCAN_IDLE_MS);
+  // Foco pegado
+  ['visibilitychange','touchend','click','blur'].forEach(evt=>{
+    window.addEventListener(evt, () => setTimeout(stickFocus, 0), { passive:true });
   });
+  document.addEventListener('DOMContentLoaded', stickFocus);
+  stickFocus();
 
-  // =====================
-  // Descargas
-  // =====================
-  function requireMeta(){
-    const responsable=($('#responsable').value||'').trim();
-    const piso=($('#piso').value||'').trim();
-    const sector=($('#sector').value||'').trim();
-    if(!responsable) return alert('Completá el RESPONSABLE.'), null;
-    if(!piso)        return alert('Seleccioná el PISO.'), null;
-    if(!sector)      return alert('Completá el SECTOR.'), null;
-    return { responsable:sanitizeForFile(responsable), piso:sanitizeForFile(piso), sector:sanitizeForFile(sector) };
-  }
-  function downloadTXT(lines, filename){
-    const blob = new Blob([lines.join('\n')], {type:'text/plain;charset=utf-8'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename;
-    document.body.appendChild(a); a.click(); URL.revokeObjectURL(a.href); a.remove();
-  }
-
-  // Válidos → siempre el CÓDIGO ORIGINAL
-  $('#descargarValidos').addEventListener('click', ()=>{
-    if (picks.length===0) return alert('No hay códigos válidos pickeados.');
-    const m=requireMeta(); if(!m) return;
-    const out = picks.map(k => (codeInfo.get(k)?.codigo) || k);
-    downloadTXT(out, `PICKEO_${yyyymmdd()}_${m.piso}_${m.sector}_${m.responsable}.txt`);
-  });
-  $('#descargarInvalidos').addEventListener('click', ()=>{
-    if (invalidPicks.length===0) return alert('No hay códigos inválidos.');
-    const m=requireMeta(); if(!m) return;
-    downloadTXT(invalidPicks, `INVALIDOS_${yyyymmdd()}_${m.piso}_${m.sector}_${m.responsable}.txt`);
-  });
-})();
+  // Wake lock
+  requestWakeLock();
+}
+boot();
