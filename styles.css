@@ -1,212 +1,138 @@
+/* ============================
+   styles.css — Pickeo Zebra
+   Rendimiento > estética
+   ============================ */
 
-
-/* ============ Variables & base ============ */
-:root{
-  --primary:#2a7de1;
-  --primary-600:#1f6ad6;
-  --ok:#16a34a;
-  --bad:#dc2626;
-  --light:#f6f7fb;
-  --border:#e5e7eb;
-  --text:#0f172a;
-  --sub:#475569;
-  --shadow:0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
-}
-
-*{ box-sizing:border-box; }
-html,body{ height:100%; }
-body{
-  margin:0;
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;
-  background:var(--light);
-  color:var(--text);
-  -webkit-font-smoothing:antialiased;
-  -moz-osx-font-smoothing:grayscale;
+/* 1) RESET SUAVE + TIPOGRAFÍA DEL SISTEMA */
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.2;
+  color: #111827;            /* zinc-900 */
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Contenedor */
-.wrap{
-  max-width:1100px;
-  margin:28px auto;
-  padding:0 16px;
+/* 2) MODO OSCURO (auto si el SO lo pide) */
+@media (prefers-color-scheme: dark) {
+  body { color: #e5e7eb; background: #0b0c0e; } /* slate-900 */
+  header { background: #0f1115; color: #f3f4f6; }
+  #scan { background:#0f1115; color:#f9fafb; border-color:#1f2937; }
+  .status { color:#93c5fd; }
+  table { color:#e5e7eb; }
+  th { background:#0f1115; }
+  td, th { border-bottom-color: #1f2937; }
+  .pill { background:#111827; color:#e5e7eb; }
 }
 
-h1{
-  font-size:22px;
-  margin:0 0 14px;
+/* 3) REDUCIR MOVIMIENTO SI EL USUARIO LO PIDE */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
 }
 
-/* ============ Topbar ============ */
-.topbar{
-  background:#fff;
-  border:1px solid var(--border);
-  border-radius:12px;
-  padding:16px;
-  margin-bottom:16px;
-  display:grid;
-  grid-template-columns:1fr 1fr 1fr;
-  gap:12px;
-  box-shadow:var(--shadow);
+/* 4) LAYOUT BÁSICO */
+header {
+  padding: 12px 16px;
+  font-weight: 700;
+  background: #f8fafc;      /* slate-50 */
+  border-bottom: 1px solid #e5e7eb;
+}
+main { padding: 12px 16px; }
+.row { display: grid; gap: 8px; }
+
+/* 5) INPUT DE ESCANEO (sin teclado, sin caret visible) */
+#scan {
+  width: 100%;
+  font-size: 20px;
+  padding: 12px 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  outline: none;
+  caret-color: transparent;        /* evita repaints al inyectar teclas */
+  background: #ffffff;
+}
+#scan:focus { border-color: #60a5fa; /* azul leve */ }
+
+/* 6) ESTADO + PASTILLAS */
+.status { font-size: 14px; opacity: .8; }
+.pillbar { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.pill {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f1f5f9; /* slate-100 */
+  font-size: 12px;
+  user-select: none;
 }
 
-label{
-  display:block;
-  font-weight:600;
-  margin-bottom:6px;
+/* 7) GRID DOS COLUMNAS (válidos / inválidos) */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 1fr; }
 }
 
-input, select{
-  width:100%;
-  padding:10px 12px;
-  border:1px solid var(--border);
-  border-radius:10px;
-  font-size:15px;
-  background:#fff;
-  transition:border-color .15s ease, box-shadow .15s ease;
+/* 8) TABLAS ULTRALIVIANAS */
+.table-wrap {
+  max-height: 45vh;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;      /* evita recalcular anchos */
+}
+th, td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+th {
+  position: sticky; top: 0;
+  background: #fafafa;
+  z-index: 1;
+  font-weight: 600;
 }
 
-input:focus, select:focus{
-  outline:none;
-  border-color:var(--primary);
-  box-shadow:0 0 0 3px rgba(42,125,225,.14);
+/* 9) SIN SOMBRAS PESADAS (opt-in por variable) */
+:root { --shadow: none; }
+.card, #scan { box-shadow: var(--shadow); }
+
+/* 10) SELECCIÓN DE TEXTO (evitar “accidentales”) */
+::selection { background: #dbeafe; color: inherit; }
+.table-wrap ::selection { background: #bfdbfe; }
+
+/* 11) SCROLLBARS FINAS (opcional) */
+.table-wrap::-webkit-scrollbar { height: 10px; width: 10px; }
+.table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+@media (prefers-color-scheme: dark) {
+  .table-wrap::-webkit-scrollbar-thumb { background: #334155; }
 }
 
-/* ============ Tarjeta principal ============ */
-.card{
-  background:#fff;
-  border:1px solid var(--border);
-  border-radius:12px;
-  padding:18px;
-  box-shadow:var(--shadow);
-}
+/* 12) TAMAÑOS DE COLUMNAS SUGERIDOS (evita relayouts) */
+#tablaValidos td:nth-child(1),
+#tablaInvalidos td:nth-child(1) { width: 48px; }
+#tablaValidos td:nth-child(2),
+#tablaInvalidos td:nth-child(2) { width: 34%; }
+#tablaValidos td:nth-child(3) { width: 28%; }    /* artículo o cantidad según tabla */
+#tablaValidos td:nth-child(4) { width: 16%; }    /* color */
+#tablaValidos td:nth-child(5) { width: 12%; }    /* talle */
+#tablaValidos td:nth-child(6),
+#tablaInvalidos td:nth-child(3) { width: 10%; text-align: right; }
 
-/* Estado */
-.status{
-  display:flex;
-  gap:10px;
-  align-items:center;
-  margin-top:8px;
-  font-weight:600;
-  min-height:40px; /* mantiene el alto cuando cambia el mensaje */
-}
-.status .ok{ color:var(--ok); }
-.status .bad{ color:var(--bad); }
+/* 13) TOQUES: QUITAR HIGHLIGHT EN ANDROID */
+* { -webkit-tap-highlight-color: transparent; }
 
-/* Pills / contadores */
-.pill{
-  display:inline-block;
-  padding:4px 8px;
-  border-radius:999px;
-  background:#eef2f7;
-  font-size:12px;
-}
-.pills-row{
-  margin-top:8px;
-  flex-wrap:wrap;
-  gap:8px;
-}
-
-/* Botones */
-button{
-  padding:10px 14px;
-  border:0;
-  border-radius:10px;
-  background:var(--primary);
-  color:#fff;
-  font-weight:600;
-  cursor:pointer;
-  transition:transform .04s ease, background-color .15s ease, box-shadow .15s ease;
-  box-shadow:0 1px 0 rgba(0,0,0,.03);
-}
-button:hover{ background:var(--primary-600); }
-button:active{ transform:translateY(1px); }
-button:disabled{
-  opacity:.6;
-  cursor:not-allowed;
-}
-
-/* Helpers de layout */
-.flex{ display:flex; gap:10px; align-items:center; }
-.space-between{ justify-content:space-between; }
-.wrap-gap{ flex-wrap:wrap; gap:12px; }
-.grow{ flex:1 1 320px; }
-.label-spacer{ display:block; height:22px; }
-
-/* Acciones */
-.actions-row{
-  margin:12px 0;
-  flex-wrap:wrap;
-  gap:8px;
-}
-
-/* Sección inválidos */
-.section-title{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin:20px 0 8px;
-}
-.h2{
-  margin:0;
-  font-size:18px;
-  font-weight:700;
-}
-
-/* Tablas */
-.table-scroll{ overflow:auto; margin-top:6px; }
-
-table{
-  width:100%;
-  border-collapse:separate;
-  border-spacing:0 8px; /* “filas flotantes” con espacios */
-}
-
-th, td{
-  text-align:left;
-  padding:10px 12px;
-  background:#f8fafc;
-}
-
-th{
-  font-size:13px;
-  color:var(--sub);
-  background:#eef2ff;
-  position:sticky; /* se mantiene visible al scrollear horizontal */
-  top:0;
-  z-index:1;
-}
-
-td.count{
-  text-align:center;
-  width:120px;
-}
-
-/* Bordes redondeados por fila */
-tbody tr td:first-child{
-  border-top-left-radius:10px;
-  border-bottom-left-radius:10px;
-  background:#fff; /* # de orden en blanco para contraste */
-}
-tbody tr td:last-child{
-  border-top-right-radius:10px;
-  border-bottom-right-radius:10px;
-}
-
-/* Scrollbar (WebKit) */
-.table-scroll::-webkit-scrollbar{ height:10px; width:10px; }
-.table-scroll::-webkit-scrollbar-track{ background:transparent; }
-.table-scroll::-webkit-scrollbar-thumb{
-  background:#d9dde7;
-  border-radius:999px;
-}
-.table-scroll::-webkit-scrollbar-thumb:hover{ background:#c8ccda; }
-
-/* ============ Responsive ============ */
-@media (max-width: 900px){
-  .topbar{ grid-template-columns:1fr; }
-}
-
-@media (max-width: 600px){
-  h1{ font-size:20px; }
-  td.count{ width:96px; }
-}
+/* 14) ESTADOS DE ÉXITO/ERROR (si quisieras colorear filas nuevas) */
+.tr-ok   { background: #f0fdf4; }  /* verde muy suave */
+.tr-bad  { background: #fef2f2; }  /* rojo muy suave */
