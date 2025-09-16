@@ -1,108 +1,66 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <title>Pickeo de Stock</title>
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- CSS externo -->
-  <link rel="stylesheet" href="styles.css">
+  <title>Generador TXT — RIO/Henko</title>
+  <meta name="description" content="App 100% front‑end para generar y descargar archivos .txt desde el navegador." />
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <div class="wrap">
-    <h1>Pickeo de Stock</h1>
+  <header class="container">
+    <h1>Generador de TXT</h1>
+    <p class="muted">100% client‑side • GitHub Pages friendly • sin autenticación</p>
+  </header>
 
-    <!-- Barra superior: responsable / piso / sector -->
-    <section class="topbar">
-      <div>
-        <label for="responsable">Responsable</label>
-        <input id="responsable" type="text" placeholder="Ej: Damian Garcia" />
-      </div>
-      <div>
-        <label for="piso">Piso</label>
-        <select id="piso">
-          <option value="">Seleccionar...</option>
-          <option value="LOCAL">LOCAL</option>
-          <option value="DEPOSITO">DEPOSITO</option>
-          <option value="WEB">WEB</option>
-          <option value="PEDIDOS">PEDIDOS</option>
-        </select>
-      </div>
-      <div>
-        <label for="sector">Sector</label>
-        <input id="sector" type="text" placeholder="Ej: Ingreso / Salida / Lencería" />
-      </div>
-    </section>
-
-    <!-- Card principal -->
+  <main class="container">
     <section class="card">
-      <div class="flex space-between wrap-gap">
-        <div class="flex grow wrap-gap">
-          <div class="grow">
-            <label for="scan">Escanear / pegar códigos</label>
-            <input id="scan" type="text" placeholder="Enfocá aquí y escaneá (Enter para confirmar)" autocomplete="off" />
-          </div>
-          <div>
-            <label class="label-spacer">&nbsp;</label>
-            <button id="confirmar">Confirmar</button>
-          </div>
-        </div>
-        <div class="status" id="estado">
-          <span class="bad">Cargando base…</span>
-        </div>
+      <h2>1) Cargar datos (opcional)</h2>
+      <p>Podés arrastrar un archivo <strong>.csv</strong> o <strong>.json</strong>, o pegar datos en el cuadro de abajo.</p>
+      <div id="drop" class="dropzone" tabindex="0" aria-label="Zona para arrastrar archivo">
+        Soltá aquí tu CSV/JSON o hacé clic para seleccionar…
+        <input id="file" type="file" accept=".csv,.json" hidden />
       </div>
-
-      <!-- Contadores -->
-      <div class="flex pills-row">
-        <div class="pill" id="pillTotal">0 válidos totales</div>
-        <div class="pill" id="pillUnicos">0 válidos únicos</div>
-        <div class="pill" id="pillInvalidos">0 inválidos</div>
-      </div>
-
-      <!-- Acciones -->
-      <div class="flex actions-row">
-        <button id="descargarValidos">Descargar TXT válidos</button>
-        <button id="descargarInvalidos">Descargar TXT inválidos</button>
-      </div>
-
-      <!-- Tabla válidos -->
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th style="width:72px">#</th>
-              <th>Código</th>
-              <th>Artículo</th>
-              <th>Color</th>
-              <th>Talle</th>
-              <th class="count">Cantidad</th>
-            </tr>
-          </thead>
-          <tbody id="tablaValidos"></tbody>
-        </table>
-      </div>
-
-      <!-- Sección inválidos -->
-      <div class="section-title">
-        <h2 class="h2">Códigos inválidos</h2>
-        <span class="pill" id="pillInvalidos2">0 códigos</span>
-      </div>
-
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th style="width:72px">#</th>
-              <th>Código</th>
-              <th class="count">Cantidad</th>
-            </tr>
-          </thead>
-          <tbody id="tablaInvalidos"></tbody>
-        </table>
+      <textarea id="raw" class="mono" rows="8" placeholder="Pegá aquí CSV (con encabezados) o JSON…"></textarea>
+      <div class="row">
+        <button id="parseBtn" class="btn">Procesar entrada</button>
+        <button id="demoBtn" class="btn ghost">Cargar demo</button>
+        <label class="spacer"></label>
+        <label>Separador TXT:
+          <select id="sep">
+            <option value=";">Punto y coma ;</option>
+            <option value=",">Coma ,</option>
+            <option value="|">Pipe |</option>
+            <option value="\t">Tabulación \t</option>
+          </select>
+        </label>
+        <label>Nombre de archivo:
+          <input id="fname" type="text" value="pedido_${FECHA}.txt" class="input">
+        </label>
       </div>
     </section>
-  </div>
 
-  <!-- JS externo  -->
-  <script src="app.js"></script>
+    <section class="card">
+      <h2>2) Revisión y edición</h2>
+      <p>Se detectan automáticamente las columnas más típicas (<em>codigo</em>, <em>talle</em>, <em>color</em>, <em>cantidad</em>). Podés editar antes de generar.</p>
+      <div id="tableWrap" class="table-wrap" aria-live="polite"></div>
+    </section>
+
+    <section class="card">
+      <h2>3) Generar y descargar TXT</h2>
+      <div class="row">
+        <button id="genBtn" class="btn primary">Generar TXT</button>
+        <button id="dlBtn" class="btn" disabled>Descargar .txt</button>
+        <span id="status" class="muted"></span>
+      </div>
+      <textarea id="preview" class="mono" rows="10" placeholder="Vista previa del TXT…" readonly></textarea>
+    </section>
+  </main>
+
+  <footer class="container foot muted">
+    Hecho para GitHub Pages · Sin servidores · Guarda tus preferencias en tu navegador (LocalStorage).
+  </footer>
+
+  <script src="./app.js"></script>
 </body>
 </html>

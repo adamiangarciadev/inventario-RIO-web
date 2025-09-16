@@ -1,164 +1,52 @@
-/* ============================
-   styles.css — Pickeo Zebra (fix dark + forms + tablas)
-   ============================ */
-
-/* Variables de color (modo claro/oscuro) */
-:root {
-  color-scheme: light dark;
-  --bg: #ffffff;
-  --fg: #111827;          /* texto principal */
-  --muted: #6b7280;       /* textos secundarios */
-  --border: #e5e7eb;
-  --card: #f8fafc;        /* fondos de controles */
-  --chip: #f1f5f9;        /* pills/botones suaves */
-  --th-bg: #fafafa;       /* thead */
-  --row-alt: #fafafa;     /* filas alternadas */
-  --accent: #60a5fa;      /* foco */
-  --shadow: none;         /* sin sombras pesadas */
+/* styles.css — minimal, rápido, accesible */
+:root{
+  --bg:#0b0c0e; --fg:#e5e7eb; --muted:#9ca3af; --card:#111317; --accent:#60a5fa;
+  --ok:#22c55e; --warn:#f59e0b; --border:#1f242b;
 }
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b0c0e;
-    --fg: #e5e7eb;
-    --muted: #9ca3af;
-    --border: #1f2937;
-    --card: #0f1115;
-    --chip: #111827;
-    --th-bg: #0f1115;
-    --row-alt: #0d1117;
-    --accent: #3b82f6;
-  }
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; font-family: ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial;
+  background:#0b0c0e; color:var(--fg);
 }
-
-/* 1) RESET + tipografía */
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { height: 100%; }
-body {
-  margin: 0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 1.25;
-  color: var(--fg);
-  background: var(--bg);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+.container{max-width:1100px; margin:0 auto; padding:16px}
+header{padding-top:24px}
+h1{margin:0 0 4px 0; font-size:clamp(22px,3vw,30px)}
+h2{margin:0 0 12px 0; font-size:20px}
+p{margin:0 0 12px 0}
+.muted{color:var(--muted)}
+.card{
+  background:var(--card); border:1px solid var(--border); padding:16px; border-radius:12px; margin:12px 0;
+  box-shadow: 0 1px 0 rgba(0,0,0,.2), 0 8px 30px rgba(0,0,0,.25);
 }
-
-/* 2) Layout básico */
-header {
-  padding: 12px 16px;
-  font-weight: 700;
-  background: var(--card);
-  color: var(--fg);
-  border-bottom: 1px solid var(--border);
+.row{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.spacer{flex:1}
+.btn{
+  border:1px solid var(--border); background:#171a1f; color:var(--fg); padding:10px 14px; border-radius:10px;
+  cursor:pointer; transition:.15s transform;
 }
-main { padding: 12px 16px; }
-.row { display: grid; gap: 8px; }
-
-/* 3) Controles (input/select/button) */
-input, select, button, textarea {
-  font: inherit;
-  color: var(--fg);
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+.btn:hover{transform:translateY(-1px)}
+.btn.primary{background:var(--accent); color:#0b0c0e; border-color:#3b82f6}
+.btn.ghost{background:transparent}
+.input, select{
+  background:#0f1216; color:var(--fg); border:1px solid var(--border); border-radius:8px; padding:8px 10px;
 }
-input::placeholder, textarea::placeholder { color: var(--muted); }
-
-#scan {
-  width: 100%;
-  font-size: 20px;
-  padding: 12px 14px;
-  outline: none;
-  caret-color: transparent;            /* evita repaints al inyectar teclas */
+textarea{
+  width:100%; background:#0f1216; color:var(--fg); border:1px solid var(--border); border-radius:10px; padding:10px;
 }
-#scan:focus { border-color: var(--accent); }
-
-button {
-  padding: 8px 12px;
-  background: var(--chip);
-  cursor: pointer;
+textarea.mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;}
+.dropzone{
+  border:1.5px dashed var(--border); border-radius:12px; padding:18px; text-align:center; margin:8px 0 12px;
+  background:#0f1216; outline: none;
 }
-button:hover { border-color: var(--accent); }
-button:active { transform: translateY(1px); }
-
-/* 4) Estado + pills */
-.status { font-size: 14px; color: var(--muted); }
-.pillbar { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-.pill {
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: var(--chip);
-  font-size: 12px;
-  user-select: none;
-  color: var(--fg);
+.dropzone:focus{border-color: var(--accent)}
+.table-wrap{overflow:auto; border:1px solid var(--border); border-radius:10px}
+table{width:100%; border-collapse:collapse; min-width:700px}
+th,td{border-bottom:1px solid var(--border); padding:8px 10px; text-align:left; font-size:14px}
+td input{
+  width:100%; background:transparent; color:var(--fg); border:1px dashed transparent; padding:6px 8px; border-radius:6px;
 }
-
-/* 5) Grid (válidos/ inválidos) */
-.grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-@media (max-width: 900px) {
-  .grid { grid-template-columns: 1fr; }
-}
-
-/* 6) Tablas livianas y legibles */
-.table-wrap {
-  max-height: 45vh;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-  background: var(--bg);
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;                /* evita recalcular anchos */
-  color: var(--fg);
-}
-th, td {
-  padding: 8px;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-th {
-  position: sticky; top: 0;
-  background: var(--th-bg);
-  z-index: 1;
-  font-weight: 600;
-}
-tbody tr:nth-child(even) td {
-  background: var(--row-alt);
-}
-
-/* 7) Anchos sugeridos (evita relayouts) */
-#tablaValidos td:nth-child(1),
-#tablaInvalidos td:nth-child(1) { width: 48px; }
-#tablaValidos td:nth-child(2),
-#tablaInvalidos td:nth-child(2) { width: 34%; }
-#tablaValidos td:nth-child(3) { width: 28%; }    /* artículo o cantidad según tabla */
-#tablaValidos td:nth-child(4) { width: 16%; }    /* color */
-#tablaValidos td:nth-child(5) { width: 12%; }    /* talle */
-#tablaValidos td:nth-child(6),
-#tablaInvalidos td:nth-child(3) { width: 10%; text-align: right; }
-
-/* 8) Selección de texto (suave) */
-::selection { background: #dbeafe; color: inherit; }
-.table-wrap ::selection { background: #bfdbfe; }
-
-/* 9) Scrollbars finas (opcionales) */
-.table-wrap::-webkit-scrollbar { height: 10px; width: 10px; }
-.table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
-@media (prefers-color-scheme: dark) {
-  .table-wrap::-webkit-scrollbar-thumb { background: #334155; }
-}
-
-/* 10) Estados (por si querés marcar filas nuevas) */
-.tr-ok  { background: #f0fdf4; }
-.tr-bad { background: #fef2f2; }
+td input:focus{outline:none; border-color: var(--accent); background:#0e1116}
+.badge{display:inline-block; padding:2px 8px; border-radius:99px; font-size:12px; border:1px solid var(--border); color:var(--muted)}
+.foot{opacity:.7; text-align:center; padding-bottom:24px}
+@media (max-width:640px){ th:nth-child(3), td:nth-child(3){display:none} }
