@@ -1,74 +1,101 @@
 /* ============================
-   styles.css — Pickeo Zebra
-   Rendimiento > estética
+   styles.css — Pickeo Zebra (fix dark + forms + tablas)
    ============================ */
 
-/* 1) RESET SUAVE + TIPOGRAFÍA DEL SISTEMA */
-* { box-sizing: border-box; }
+/* Variables de color (modo claro/oscuro) */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #111827;          /* texto principal */
+  --muted: #6b7280;       /* textos secundarios */
+  --border: #e5e7eb;
+  --card: #f8fafc;        /* fondos de controles */
+  --chip: #f1f5f9;        /* pills/botones suaves */
+  --th-bg: #fafafa;       /* thead */
+  --row-alt: #fafafa;     /* filas alternadas */
+  --accent: #60a5fa;      /* foco */
+  --shadow: none;         /* sin sombras pesadas */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0c0e;
+    --fg: #e5e7eb;
+    --muted: #9ca3af;
+    --border: #1f2937;
+    --card: #0f1115;
+    --chip: #111827;
+    --th-bg: #0f1115;
+    --row-alt: #0d1117;
+    --accent: #3b82f6;
+  }
+}
+
+/* 1) RESET + tipografía */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; }
 body {
   margin: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   font-size: 16px;
-  line-height: 1.2;
-  color: #111827;            /* zinc-900 */
-  background: #ffffff;
+  line-height: 1.25;
+  color: var(--fg);
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 2) MODO OSCURO (auto si el SO lo pide) */
-@media (prefers-color-scheme: dark) {
-  body { color: #e5e7eb; background: #0b0c0e; } /* slate-900 */
-  header { background: #0f1115; color: #f3f4f6; }
-  #scan { background:#0f1115; color:#f9fafb; border-color:#1f2937; }
-  .status { color:#93c5fd; }
-  table { color:#e5e7eb; }
-  th { background:#0f1115; }
-  td, th { border-bottom-color: #1f2937; }
-  .pill { background:#111827; color:#e5e7eb; }
-}
-
-/* 3) REDUCIR MOVIMIENTO SI EL USUARIO LO PIDE */
-@media (prefers-reduced-motion: reduce) {
-  * { animation: none !important; transition: none !important; }
-}
-
-/* 4) LAYOUT BÁSICO */
+/* 2) Layout básico */
 header {
   padding: 12px 16px;
   font-weight: 700;
-  background: #f8fafc;      /* slate-50 */
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--card);
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
 }
 main { padding: 12px 16px; }
 .row { display: grid; gap: 8px; }
 
-/* 5) INPUT DE ESCANEO (sin teclado, sin caret visible) */
+/* 3) Controles (input/select/button) */
+input, select, button, textarea {
+  font: inherit;
+  color: var(--fg);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+input::placeholder, textarea::placeholder { color: var(--muted); }
+
 #scan {
   width: 100%;
   font-size: 20px;
   padding: 12px 14px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
   outline: none;
-  caret-color: transparent;        /* evita repaints al inyectar teclas */
-  background: #ffffff;
+  caret-color: transparent;            /* evita repaints al inyectar teclas */
 }
-#scan:focus { border-color: #60a5fa; /* azul leve */ }
+#scan:focus { border-color: var(--accent); }
 
-/* 6) ESTADO + PASTILLAS */
-.status { font-size: 14px; opacity: .8; }
+button {
+  padding: 8px 12px;
+  background: var(--chip);
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button:active { transform: translateY(1px); }
+
+/* 4) Estado + pills */
+.status { font-size: 14px; color: var(--muted); }
 .pillbar { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .pill {
   padding: 6px 10px;
   border-radius: 999px;
-  background: #f1f5f9; /* slate-100 */
+  background: var(--chip);
   font-size: 12px;
   user-select: none;
+  color: var(--fg);
 }
 
-/* 7) GRID DOS COLUMNAS (válidos / inválidos) */
+/* 5) Grid (válidos/ inválidos) */
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -78,48 +105,39 @@ main { padding: 12px 16px; }
   .grid { grid-template-columns: 1fr; }
 }
 
-/* 8) TABLAS ULTRALIVIANAS */
+/* 6) Tablas livianas y legibles */
 .table-wrap {
   max-height: 45vh;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  background: var(--bg);
 }
+
 table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed;      /* evita recalcular anchos */
+  table-layout: fixed;                /* evita recalcular anchos */
+  color: var(--fg);
 }
 th, td {
   padding: 8px;
   text-align: left;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--border);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 th {
   position: sticky; top: 0;
-  background: #fafafa;
+  background: var(--th-bg);
   z-index: 1;
   font-weight: 600;
 }
-
-/* 9) SIN SOMBRAS PESADAS (opt-in por variable) */
-:root { --shadow: none; }
-.card, #scan { box-shadow: var(--shadow); }
-
-/* 10) SELECCIÓN DE TEXTO (evitar “accidentales”) */
-::selection { background: #dbeafe; color: inherit; }
-.table-wrap ::selection { background: #bfdbfe; }
-
-/* 11) SCROLLBARS FINAS (opcional) */
-.table-wrap::-webkit-scrollbar { height: 10px; width: 10px; }
-.table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
-@media (prefers-color-scheme: dark) {
-  .table-wrap::-webkit-scrollbar-thumb { background: #334155; }
+tbody tr:nth-child(even) td {
+  background: var(--row-alt);
 }
 
-/* 12) TAMAÑOS DE COLUMNAS SUGERIDOS (evita relayouts) */
+/* 7) Anchos sugeridos (evita relayouts) */
 #tablaValidos td:nth-child(1),
 #tablaInvalidos td:nth-child(1) { width: 48px; }
 #tablaValidos td:nth-child(2),
@@ -130,9 +148,17 @@ th {
 #tablaValidos td:nth-child(6),
 #tablaInvalidos td:nth-child(3) { width: 10%; text-align: right; }
 
-/* 13) TOQUES: QUITAR HIGHLIGHT EN ANDROID */
-* { -webkit-tap-highlight-color: transparent; }
+/* 8) Selección de texto (suave) */
+::selection { background: #dbeafe; color: inherit; }
+.table-wrap ::selection { background: #bfdbfe; }
 
-/* 14) ESTADOS DE ÉXITO/ERROR (si quisieras colorear filas nuevas) */
-.tr-ok   { background: #f0fdf4; }  /* verde muy suave */
-.tr-bad  { background: #fef2f2; }  /* rojo muy suave */
+/* 9) Scrollbars finas (opcionales) */
+.table-wrap::-webkit-scrollbar { height: 10px; width: 10px; }
+.table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 6px; }
+@media (prefers-color-scheme: dark) {
+  .table-wrap::-webkit-scrollbar-thumb { background: #334155; }
+}
+
+/* 10) Estados (por si querés marcar filas nuevas) */
+.tr-ok  { background: #f0fdf4; }
+.tr-bad { background: #fef2f2; }
