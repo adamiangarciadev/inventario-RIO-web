@@ -38,11 +38,9 @@
   document.addEventListener("DOMContentLoaded", () => {
     setupSelectors();
     bindUI();
-    // Autoload equivalencia.csv
     loadProjectCSV(DEFAULT_CSV).catch(() => {
       showPill("danger", "No se encontró equivalencia.csv");
     });
-    // Mantener listo el input (sin robar foco a otros controles)
     keepFocus();
   });
 
@@ -76,7 +74,6 @@
     if (origen && SUCURSALES.includes(origen)) el.origenSelect.value = origen;
     if (destino && SUCURSALES.includes(destino)) el.destinoSelect.value = destino;
     if (typeof remito === "string") el.remitoInput.value = remito;
-    // guardar cambios
     [el.respSelect, el.origenSelect, el.destinoSelect].forEach(s => s?.addEventListener("change", saveMeta));
     if (el.remitoInput) {
       el.remitoInput.addEventListener("input", (e) => {
@@ -132,7 +129,7 @@
     const res = await fetch("./" + target, { cache: "no-store" });
     if (!res.ok) throw new Error("CSV not found");
     const text = await res.text();
-    rows = parseCSV(text);
+    rows = parseCSV(text);     // <-- autodetecta ; , | \t + comillas
     indexCodes(rows);
     showPill("ok","Listo para pickear");
   }
@@ -140,7 +137,7 @@
   function indexCodes(data){
     byCode.clear();
     const keys = Object.keys(data[0] || {});
-    const codeKey = guessCodeColumn(keys); // columna de lookup
+    const codeKey = guessCodeColumn(keys);   // columna para BUSCAR (código escaneado)
     data.forEach(r => {
       const code = String(r[codeKey] ?? "").trim();
       if (code) byCode.set(code, r);
@@ -149,14 +146,17 @@
 
   function guessCodeColumn(keys){
     const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu,"");
-    const patterns = ["equivalencia","equiv","codigo_barras","barra","barcode","ean","scann","scan","lectura","codigo","código","sku","cod"];
+    const patterns = ["codigo","código","codigo_barras","barra","barcode","ean","lectura","scan","equivalencia","equiv","sku","cod"];
     return keys.find(k => patterns.some(p => norm(k).includes(p))) || keys[0];
   }
 
+  // Para el TXT final: priorizar ARTÍCULO (código interno), luego código/sku/cod
   function getOutputCode(row, fallback){
     if (!row) return String(fallback ?? "");
     const keys = Object.keys(row);
-    const pref = findKey(keys, ["codigo","código","sku","articulo","artículo","cod"]);
+    const prefArt = findKey(keys, ["articulo","artículo"]);
+    if (prefArt) return String(row[prefArt] ?? "");
+    const pref = findKey(keys, ["codigo","código","sku","cod"]);
     return String((pref ? row[pref] : fallback) ?? "");
   }
   function findKey(keys, pats){
@@ -278,30 +278,68 @@
     return out.replace(/[\\/:*?"<>|]+/g, "_");
   }
 
-  // ====== Helpers ======
+  // ====== CSV robusto (autodetecta delimitador y maneja comillas) ======
   function parseCSV(text){
-    const lines = text.split(/\r?\n/);
-    while (lines.length && !lines[lines.length-1].trim()) lines.pop();
+    const lines = text.split(/\r?\n/).filter(l => l.length>0);
     if (!lines.length) return [];
-    const headers = splitCSVLine(lines[0]);
-    return lines.slice(1).map(line => {
-      const cells = splitCSVLine(line);
-      const obj = {};
-      headers.forEach((h,i) => obj[h] = cells[i] ?? "");
-      return obj;
+    const sep = detectDelimiter(lines[0], lines[1]); // ; , | \t
+    const rawHeaders = splitCSVLine(lines[0], sep);
+    // dedup de encabezados
+    const seen = {};
+    const headers = rawHeaders.map(h => {
+      let k = String(h || "").trim();
+      if (!k) k = "COL";
+      if (seen[k]) {
+        let n = 2;
+        while (seen[`${k}_${n}`]) n++;
+        k = `${k}_${n}`;
+      }
+      seen[k] = true;
+      return k;
     });
+    const out = [];
+    for (let i=1;i<lines.length;i++){
+      const cells = splitCSVLine(lines[i], sep);
+      const obj = {};
+      headers.forEach((h,idx) => obj[h] = cells[idx] ?? "");
+      out.push(obj);
+    }
+    return out;
   }
-  function splitCSVLine(line){
+  function detectDelimiter(l1, l2=""){
+    const cands = [",",";","|","\t"];
+    const score = (line, ch) => {
+      let q=false, n=0;
+      for(let i=0;i<line.length;i++){
+        const c=line[i], nxt=line[i+1];
+        if (c === '"'){ if(q && nxt === '"'){ i++; } else { q=!q; } }
+        else if (!q && c === ch){ n++; }
+      }
+      return n;
+    };
+    const totals = cands.map(ch => (score(l1,ch)+score(l2,ch)));
+    let best = 0, bestIdx = 0;
+    totals.forEach((n,idx) => { if(n>best){ best=n; bestIdx=idx; } });
+    return best>0 ? cands[bestIdx] : ";"; // default a ; para tu formato
+  }
+  function splitCSVLine(line, sep){
     const out = []; let cur=""; let q=false;
     for(let i=0;i<line.length;i++){
       const c=line[i], n=line[i+1];
-      if(c==='\"'){ if(q && n==='\"'){ cur+='\"'; i++; } else { q=!q; } }
-      else if(c===',' && !q){ out.push(cur); cur=""; }
-      else { cur+=c; }
+      if(c === '"'){
+        if(q && n === '"'){ cur+='"'; i++; } else { q=!q; }
+      } else if(c === sep && !q){
+        out.push(cur); cur="";
+      } else {
+        cur += c;
+      }
     }
     out.push(cur);
-    return out;
+    // trim de espacios externos
+    return out.map(s => s.trim());
   }
+
+  // ====== Helpers ======
   function slug(s){ return (s||"").toString().normalize("NFD").replace(/\p{Diacritic}/gu,"").replace(/[^\w\-]+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,""); }
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, (m) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
