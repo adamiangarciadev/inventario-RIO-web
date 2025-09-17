@@ -3,55 +3,71 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Picking de remitos — RIO</title>
-  <meta name="description" content="App 100% front-end para generar y descargar archivos .txt desde el navegador." />
+  <title>PICKING - RIO</title>
+  <meta name="description" content="App 100% front-end para pickeo con escáner (Zebra/HID) y descarga de TXT." />
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <header class="container">
-    <h1>Picking de remitos</h1>
+  <header class="container header-row">
     
+    <div id="readyPill" class="pill hidden" aria-live="polite" title="Estado">
+      <span class="dot"></span><span id="pillText">Cargando…</span>
+    </div>
   </header>
 
   <main class="container">
-    
-   
+    <section class="card">
+      <h2>Configurar pickeo</h2>
       <div class="row">
-        <label>CSV del proyecto:
-          <input id="csvPath" type="text" value="equivalencia.csv" class="input" />
+        <label>Responsable
+          <select id="respSelect" class="input"></select>
         </label>
-        <button id="projectBtn" class="btn">Leer CSV del proyecto</button>
-        <span class="badge">Busca en <code>./equivalencia.csv</code> (misma carpeta)</span>
-      </div>
-
-      <div class="row">
-        <button id="parseBtn" class="btn">Procesar entrada</button>
-        <button id="demoBtn" class="btn ghost">Cargar demo</button>
+        <label>Origen
+          <select id="origenSelect" class="input"></select>
+        </label>
+        <label>Destino
+          <select id="destinoSelect" class="input"></select>
+        </label>
+        <label>Número de remito
+          <input id="remitoInput" type="text" inputmode="numeric" pattern="\d*" placeholder="Solo números" class="input" />
+        </label>
         <label class="spacer"></label>
+        <span class="badge">Se guarda en tu navegador</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Pickeo</h2>
+      <p class="muted small">La app carga automáticamente <code>./equivalencia.csv</code>. Escaneá el código en el campo de abajo.</p>
+      <div class="scan-wrap">
+        <input id="scanInput" class="scan-input" type="text" placeholder="Escaneá el código…" autocomplete="off" autofocus />
+        <div class="scan-meta">
+          <span id="scanCount" class="badge">0 escaneados</span>
+          <span id="noti" class="muted"></span>
+        </div>
+      </div>
+      <div id="lastScans" class="last-scans"></div>
+    </section>
+
+    <section class="card">
+      <h2>Descargar TXT</h2>
+      <div class="row">
         <label>Separador TXT:
           <select id="sep">
             <option value=";">Punto y coma ;</option>
             <option value=",">Coma ,</option>
             <option value="|">Pipe |</option>
-            <option value="\\t">Tabulación \\t</option>
+            <option value="\t">Tabulación \t</option>
           </select>
         </label>
         <label>Nombre de archivo:
-          <input id="fname" type="text" value="pedido_${FECHA}.txt" class="input">
+          <input id="fname" type="text" value="pedido_${FECHA}_${RESPONSABLE}_${ORIGEN}_a_${DESTINO}_remito_${REMITO}.txt" class="input">
         </label>
+        <label class="spacer"></label>
+        <button id="downloadBtn" class="btn primary">Descargar .txt</button>
+        <button id="clearBtn" class="btn ghost">Borrar lista</button>
       </div>
-    </section>
-
-    
-     
-    <section class="card">
-      <h2> Generar y descargar TXT</h2>
-      <div class="row">
-        <button id="genBtn" class="btn primary">Generar TXT</button>
-        <button id="dlBtn" class="btn" disabled>Descargar .txt</button>
-        <span id="status" class="muted"></span>
-      </div>
-      <textarea id="preview" class="mono" rows="10" placeholder="Vista previa del TXT…" readonly></textarea>
+      <p class="muted small">Formato: si el CSV tiene columnas <em>talle</em> y/o <em>color</em>, se incluirán; de lo contrario solo <em>codigo</em> y <em>cantidad</em>.</p>
     </section>
   </main>
 
