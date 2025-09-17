@@ -1,11 +1,11 @@
-/* app.js — 2 CSV, match normalizado, faltantes y nombre de archivo con BULTOS */
+/* app.js — 2 CSV, match normalizado, nombre con BULTOS, y UN SOLO TXT con TODOS los códigos */
 ;(() => {
   "use strict";
 
   // ====== Config ======
   const RESPONSABLES = ["DAVID","DIEGO","JOEL","MARTIN","MIGUEL","NAHUEL","RICARDO","RODRIGO"];
-  const SUCURSALES  = ["AV2","NAZCA","LAMARCA","CORRIENTES","CO2","CASTELLI","QUILMES","MORENO", "SARMIENTO","DEPOSITO"];
-  const CSV_FILES   = ["equivalencia.csv", "equivalencia2.csv"]; // se cargan ambos si existen
+  const SUCURSALES  = ["AV2","NAZCA","LAMARCA","CORRIENTES","CO2","CASTELLI","QUILMES","MORENO","SARMIENTO","DEPOSITO"];
+  const CSV_FILES   = ["equivalencia.csv", "equivalencia2.csv"]; // ambos si existen
   const LS_META  = "pickeo_meta_v1";
   const AUTOCOMMIT_IDLE_MS = 80;
   const MIN_LEN_FOR_COMMIT = 3;
@@ -76,7 +76,6 @@
     if (typeof remito === "string") el.remitoInput.value = remito;
 
     [el.respSelect, el.origenSelect, el.destinoSelect].forEach(s => s?.addEventListener("change", saveMeta));
-    // Solo números en bultos y remito
     const digitsOnly = (e) => {
       const v = (e.target.value || "").replace(/\D+/g, "");
       if (v !== e.target.value) e.target.value = v;
@@ -251,29 +250,16 @@
     });
   }
 
-  // ====== TXT ======
+  // ====== TXT (UN SOLO ARCHIVO con TODOS los códigos) ======
   function downloadTxt(){
-    const okLines = scans.filter(s => s.ok).map(s => {
+    // Todos los escaneos, sin filtrar, convirtiendo a código interno si existe
+    const lines = scans.map(s => {
       const row = byCode.get(key(s.code));
       return getOutputCode(row, s.code);
     });
 
-    const seen = new Set();
-    const missingLines = [];
-    scans.forEach(s => {
-      if (!s.ok){
-        const k = key(s.code);
-        if (!seen.has(k)){ seen.add(k); missingLines.push(String(s.code)); }
-      }
-    });
-
     const fnameBase = resolveFilename();
-    downloadString(okLines.join("\n"), fnameBase);
-
-    if (missingLines.length){
-      const fnameMissing = withSuffix(fnameBase, "FALTA EQUIVALENCIA");
-      downloadString(missingLines.join("\n"), fnameMissing);
-    }
+    downloadString(lines.join("\n"), fnameBase);
   }
 
   // Formato: YYMMDD DESTINO RESPONSABLE NB REM<REMITO>.txt
@@ -294,20 +280,9 @@
     return ensureTxt(sanitize(base));
   }
 
-  // ====== Helpers: CSV, strings, etc. ======
-  function withSuffix(name, suffix){
-    const i = name.lastIndexOf(".");
-    const base = i >= 0 ? name.slice(0, i) : name;
-    const ext  = i >= 0 ? name.slice(i) : ".txt";
-    return `${base} - ${suffix}${ext}`.replace(/[\\/:*?"<>|]+/g, "_");
-  }
-  function ensureTxt(name){
-    return name.toLowerCase().endsWith(".txt") ? name : `${name}.txt`;
-  }
-  function sanitize(s){
-    // Permite espacios y acentos; elimina caracteres inválidos para nombre de archivo
-    return s.replace(/[\\/:*?"<>|]+/g, "_");
-  }
+  // ====== Helpers ======
+  function ensureTxt(name){ return name.toLowerCase().endsWith(".txt") ? name : `${name}.txt`; }
+  function sanitize(s){ return s.replace(/[\\/:*?"<>|]+/g, "_"); } // mantiene espacios/acentos
   function safeName(s){ return s.normalize("NFC"); }
 
   function downloadString(content, fname){
@@ -374,13 +349,9 @@
     return out;
   }
 
-  // ====== Otros helpers ======
+  // ====== Otros helpers visuales ======
   function slug(s){ return (s||"").toString().normalize("NFD").replace(/\p{Diacritic}/gu,"").replace(/[^\w\-]+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,""); }
-  function escapeHtml(s){
-    return String(s).replace(/[&<>"']/g, (m) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
-  }
-
-  // ====== Pill ======
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, (m) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m])); }
   function showPill(state, text){
     if(!el.readyPill) return;
     el.readyPill.classList.remove("hidden","ok","warn","danger");
