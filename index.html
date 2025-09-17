@@ -3,25 +3,27 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Generador TXT — RIO/Henko</title>
-  <meta name="description" content="App 100% front‑end para generar y descargar archivos .txt desde el navegador." />
+  <title>Picking de remitos — RIO</title>
+  <meta name="description" content="App 100% front-end para generar y descargar archivos .txt desde el navegador." />
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <header class="container">
-    <h1>Generador de TXT</h1>
-    <p class="muted">100% client‑side • GitHub Pages friendly • sin autenticación</p>
+    <h1>Picking de remitos</h1>
+    
   </header>
 
   <main class="container">
-    <section class="card">
-      <h2>1) Cargar datos (opcional)</h2>
-      <p>Podés arrastrar un archivo <strong>.csv</strong> o <strong>.json</strong>, o pegar datos en el cuadro de abajo.</p>
-      <div id="drop" class="dropzone" tabindex="0" aria-label="Zona para arrastrar archivo">
-        Soltá aquí tu CSV/JSON o hacé clic para seleccionar…
-        <input id="file" type="file" accept=".csv,.json" hidden />
+    
+   
+      <div class="row">
+        <label>CSV del proyecto:
+          <input id="csvPath" type="text" value="equivalencia.csv" class="input" />
+        </label>
+        <button id="projectBtn" class="btn">Leer CSV del proyecto</button>
+        <span class="badge">Busca en <code>./equivalencia.csv</code> (misma carpeta)</span>
       </div>
-      <textarea id="raw" class="mono" rows="8" placeholder="Pegá aquí CSV (con encabezados) o JSON…"></textarea>
+
       <div class="row">
         <button id="parseBtn" class="btn">Procesar entrada</button>
         <button id="demoBtn" class="btn ghost">Cargar demo</button>
@@ -31,7 +33,7 @@
             <option value=";">Punto y coma ;</option>
             <option value=",">Coma ,</option>
             <option value="|">Pipe |</option>
-            <option value="\t">Tabulación \t</option>
+            <option value="\\t">Tabulación \\t</option>
           </select>
         </label>
         <label>Nombre de archivo:
