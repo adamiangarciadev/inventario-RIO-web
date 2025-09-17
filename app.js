@@ -276,7 +276,7 @@
     out.push(cur);
     return out;
   }
-  function slug(s){ return (s||"").toString().normalize("NFD").replace(/\\p{Diacritic}/gu,"").replace(/[^\\w\\-]+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,""); }
+  function slug(s){ return (s||"").toString().normalize("NFD").replace(/\p{Diacritic}/gu,"").replace(/[^\w\-]+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,""); }
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, (m) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
   }
