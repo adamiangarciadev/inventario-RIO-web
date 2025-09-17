@@ -6,10 +6,10 @@
   const RESPONSABLES = ["DAVID","DIEGO","JOEL","MARTIN","MIGUEL","NAHUEL","RICARDO","RODRIGO"];
   const SUCURSALES  = ["AVELLANEDA 2","NAZCA","LAMARCA","CORRIENTES","CORRIENTES 2","CASTELLI","QUILMES","MORENO"];
   const DEFAULT_CSV = "equivalencia.csv";
-  const LS_META = "pickeo_meta_v1";
+  const LS_META  = "pickeo_meta_v1";
   const LS_PREFS = "pickeo_prefs_v1";
   // Auto-Enter tras idle del escáner (ms)
-  const AUTOCOMMIT_IDLE_MS = 80; // ajustable 60-120ms
+  const AUTOCOMMIT_IDLE_MS = 80; // ajustable 60–120 ms
   const MIN_LEN_FOR_COMMIT = 3;  // evita commits por ruido muy corto
 
   // ====== Estado ======
@@ -17,29 +17,29 @@
   let byCode = new Map();      // code -> row
   let scans = [];              // {code, ok, time}
   let audioCtx = null;
-  let scanTimer = null;        // <-- faltaba!
+  let scanTimer = null;
 
   // ====== Elementos ======
   const $ = (sel, ctx=document) => ctx.querySelector(sel);
   const el = {
     // pill
     readyPill: $("#readyPill"),
-    pillText: $("#pillText"),
+    pillText:  $("#pillText"),
     // selects
-    respSelect: $("#respSelect"),
+    respSelect:   $("#respSelect"),
     origenSelect: $("#origenSelect"),
-    destinoSelect: $("#destinoSelect"),
-    remitoInput: $("#remitoInput"),
+    destinoSelect:$("#destinoSelect"),
+    remitoInput:  $("#remitoInput"),
     // scan
     scanInput: $("#scanInput"),
     scanCount: $("#scanCount"),
-    noti: $("#noti"),
-    lastScans: $("#lastScans"),
+    noti:       $("#noti"),
+    lastScans:  $("#lastScans"),
     // download
-    sep: $("#sep"),
-    fname: $("#fname"),
+    sep:         $("#sep"),
+    fname:       $("#fname"),
     downloadBtn: $("#downloadBtn"),
-    clearBtn: $("#clearBtn"),
+    clearBtn:    $("#clearBtn"),
   };
 
   // ====== Init ======
@@ -51,7 +51,7 @@
     loadProjectCSV(DEFAULT_CSV).catch(() => {
       showPill("danger", "No se encontró equivalencia.csv");
     });
-    // Mantener foco en input
+    // Mantener listo el input de escaneo (sin robar foco a otros controles)
     keepFocus();
   });
 
@@ -59,12 +59,13 @@
     if (el.scanInput){
       el.scanInput.addEventListener("keydown", (e) => {
         ensureAudio();
-        // Si el escáner ya manda Enter, seguimos soportándolo
+        // Si el escáner ya manda Enter, también funciona
         if (e.key === "Enter"){
           e.preventDefault();
           const code = (el.scanInput.value || "").trim();
           processScan(code);
-          el.scanInput.select();
+          el.scanInput.value = "";   // limpiar
+          el.scanInput.focus();      // listo para el próximo
           clearTimeout(scanTimer); scanTimer = null;
           return;
         }
@@ -74,10 +75,12 @@
       el.scanInput.addEventListener("input", () => { ensureAudio(); scheduleAutoCommit(); });
     }
     if (el.downloadBtn) el.downloadBtn.addEventListener("click", downloadTxt);
-    if (el.clearBtn) el.clearBtn.addEventListener("click", () => { scans = []; renderLast(); });
+    if (el.clearBtn)    el.clearBtn.addEventListener("click", () => { scans = []; renderLast(); });
+
     // Prefs
-    if (el.sep) el.sep.addEventListener("change", savePrefs);
+    if (el.sep)   el.sep.addEventListener("change", savePrefs);
     if (el.fname) el.fname.addEventListener("change", savePrefs);
+
     // Meta
     [el.respSelect, el.origenSelect, el.destinoSelect].forEach(s => s?.addEventListener("change", saveMeta));
     if (el.remitoInput) {
@@ -103,9 +106,9 @@
   function saveMeta(){
     writeLocal(LS_META, {
       responsable: el.respSelect?.value || "",
-      origen: el.origenSelect?.value || "",
-      destino: el.destinoSelect?.value || "",
-      remito: el.remitoInput?.value || "",
+      origen:      el.origenSelect?.value || "",
+      destino:     el.destinoSelect?.value || "",
+      remito:      el.remitoInput?.value || "",
     });
   }
   function savePrefs(){
@@ -113,7 +116,7 @@
   }
   function restorePrefs(){
     const p = readLocal(LS_PREFS) || {};
-    if (p.sep) el.sep.value = p.sep;
+    if (p.sep)   el.sep.value = p.sep;
     if (p.fname) el.fname.value = p.fname;
   }
   function fillOptions(select, list){
@@ -168,7 +171,6 @@
       const code = String(r[codeKey] ?? "").trim();
       if (code) byCode.set(code, r);
     });
-    // opcional: también indexar variantes con padding/upper si hace falta
   }
 
   function guessCodeColumn(keys){
@@ -187,7 +189,8 @@
     const code = (el.scanInput.value || "").trim();
     if (code.length >= MIN_LEN_FOR_COMMIT){
       processScan(code);
-      el.scanInput.select();
+      el.scanInput.value = "";  // limpiar
+      el.scanInput.focus();     // listo para el próximo
     }
     scanTimer = null;
   }
@@ -226,27 +229,21 @@
     el.lastScans.innerHTML = recent || "";
   }
 
- // Mantener foco SOLO donde corresponde (sin robarlo a los selects/inputs)
-function keepFocus(){
-  if (!el.scanInput) return;
-  // Foco inicial al cargar
-  el.scanInput.focus();
-
-  // Si el usuario hace click fuera de controles interactivos, volvemos al input
-  document.addEventListener("click", (e) => {
-    const t = e.target;
-    const isInteractive = t.closest('input,select,textarea,button,a,label,[role="button"]');
-    if (!isInteractive) {
-      // re-enfoca solo si hizo click "en vacío"
-      setTimeout(() => el.scanInput.focus(), 0);
-    }
-  });
-}
-
+  // Mantener foco SOLO donde corresponde (sin robarlo a los selects/inputs)
+  function keepFocus(){
+    if (!el.scanInput) return;
+    // Foco inicial
+    el.scanInput.focus();
+    // Si se hace click “en vacío”, devolver foco al input
+    document.addEventListener("click", (e) => {
+      const isInteractive = e.target.closest('input,select,textarea,button,a,label,[role="button"]');
+      if (!isInteractive) setTimeout(() => el.scanInput.focus(), 0);
+    });
+  }
 
   // ====== TXT ======
   function downloadTxt(){
-    const sep = el.sep.value === "\\t" ? "\t" : el.sep.value; // <-- tab real
+    const sep = el.sep.value === "\\t" ? "\t" : el.sep.value;
     const counts = new Map(); // code -> {cant, row}
     scans.filter(s => s.ok).forEach(s => {
       const row = byCode.get(s.code);
@@ -270,7 +267,7 @@ function keepFocus(){
       lines.push(base.join(sep));
     });
 
-    const content = lines.join("\n"); // <-- newline real
+    const content = lines.join("\n");
     const fname = resolveFilename(el.fname.value);
     const blob = new Blob([content], {type: "text/plain;charset=utf-8"});
     const url = URL.createObjectURL(blob);
@@ -285,9 +282,9 @@ function keepFocus(){
     const pad = (n) => String(n).padStart(2,"0");
     const FECHA = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
     const RESPONSABLE = slug(el.respSelect?.value || "");
-    const ORIGEN = slug(el.origenSelect?.value || "");
-    const DESTINO = slug(el.destinoSelect?.value || "");
-    const REMITO = (el.remitoInput?.value || "").toString();
+    const ORIGEN      = slug(el.origenSelect?.value || "");
+    const DESTINO     = slug(el.destinoSelect?.value || "");
+    const REMITO      = (el.remitoInput?.value || "").toString();
     const map = { "${FECHA}": FECHA, "${RESPONSABLE}": RESPONSABLE, "${ORIGEN}": ORIGEN, "${DESTINO}": DESTINO, "${REMITO}": REMITO };
     let out = tpl || "pedido_${FECHA}.txt";
     Object.entries(map).forEach(([k,v]) => { out = out.replaceAll(k, v); });
@@ -298,7 +295,7 @@ function keepFocus(){
   function parseCSV(text){
     const lines = text.split(/\r?\n/);
     if (!lines.length) return [];
-    // skip empty tail lines
+    // quitar líneas vacías al final
     while (lines.length && !lines[lines.length-1].trim()) lines.pop();
     if (!lines.length) return [];
     const headers = splitCSVLine(lines[0]);
