@@ -5,7 +5,7 @@
   // ====== Config ======
   const RESPONSABLES = ["DAVID","DIEGO","JOEL","MARTIN","MIGUEL","NAHUEL","RICARDO","RODRIGO"];
   const SUCURSALES  = ["AV2","NAZCA","LAMARCA","CORRIENTES","CO2","CASTELLI","QUILMES","MORENO", "SARMIENTO","DEPOSITO"];
-  const CSV_FILES   = ["equivalencia.csv", "equivalencias2.csv"]; // se cargan ambos si existen
+  const CSV_FILES   = ["equivalencia.csv", "equivalencia2.csv"]; // se cargan ambos si existen
   const LS_META  = "pickeo_meta_v1";
   const AUTOCOMMIT_IDLE_MS = 80;
   const MIN_LEN_FOR_COMMIT = 3;
