@@ -31,6 +31,9 @@
         <label>Destino
           <select id="destinoSelect" class="input"></select>
         </label>
+        <label>Bultos
+          <input id="bultosInput" type="text" inputmode="numeric" pattern="\d*" placeholder="Cantidad" class="input" />
+        </label>
         <label>Número de remito
           <input id="remitoInput" type="text" inputmode="numeric" pattern="\d*" placeholder="Solo números" class="input" />
         </label>
@@ -41,7 +44,7 @@
 
     <section class="card">
       <h2>Pickeo</h2>
-      <p class="muted small">La app carga automáticamente <code>./equivalencia.csv</code>. Escaneá el código en el campo de abajo.</p>
+      <p class="muted small">La app carga automáticamente <code>equivalencia.csv</code> y <code>equivalencias2.csv</code> si existen en la carpeta.</p>
       <div class="scan-wrap">
         <input id="scanInput" class="scan-input" type="text" placeholder="Escaneá el código…" autocomplete="off" autofocus />
         <div class="scan-meta">
@@ -58,6 +61,7 @@
         <label class="spacer"></label>
         <button id="downloadBtn" class="btn primary">Descargar archivo</button>
       </div>
+      <p class="muted small">Se genera un TXT con <em>un código por línea</em> en el orden escaneado. También descarga “FALTA EQUIVALENCIA” si hay faltantes.</p>
     </section>
   </main>
 

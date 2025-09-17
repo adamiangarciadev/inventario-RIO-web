@@ -1,11 +1,11 @@
-/* app.js — 2 CSV, debug de carga, match normalizado */
+/* app.js — 2 CSV, match normalizado, faltantes y nombre de archivo con BULTOS */
 ;(() => {
   "use strict";
 
   // ====== Config ======
   const RESPONSABLES = ["DAVID","DIEGO","JOEL","MARTIN","MIGUEL","NAHUEL","RICARDO","RODRIGO"];
   const SUCURSALES  = ["AVELLANEDA 2","NAZCA","LAMARCA","CORRIENTES","CORRIENTES 2","CASTELLI","QUILMES","MORENO"];
-  const CSV_FILES   = ["equivalencia.csv", "equivalencia2.csv"]; // ambos en la misma carpeta
+  const CSV_FILES   = ["equivalencia.csv", "equivalencias2.csv"]; // se cargan ambos si existen
   const LS_META  = "pickeo_meta_v1";
   const AUTOCOMMIT_IDLE_MS = 80;
   const MIN_LEN_FOR_COMMIT = 3;
@@ -25,6 +25,7 @@
     respSelect:   $("#respSelect"),
     origenSelect: $("#origenSelect"),
     destinoSelect:$("#destinoSelect"),
+    bultosInput:  $("#bultosInput"),
     remitoInput:  $("#remitoInput"),
     scanInput: $("#scanInput"),
     scanCount: $("#scanCount"),
@@ -66,25 +67,30 @@
     fillOptions(el.respSelect, RESPONSABLES);
     fillOptions(el.origenSelect, SUCURSALES);
     fillOptions(el.destinoSelect, SUCURSALES);
-    const { responsable, origen, destino, remito } = readLocal("pickeo_meta_v1") || {};
+
+    const { responsable, origen, destino, remito, bultos } = readLocal(LS_META) || {};
     if (responsable && RESPONSABLES.includes(responsable)) el.respSelect.value = responsable;
     if (origen && SUCURSALES.includes(origen)) el.origenSelect.value = origen;
     if (destino && SUCURSALES.includes(destino)) el.destinoSelect.value = destino;
+    if (typeof bultos === "string") el.bultosInput.value = bultos;
     if (typeof remito === "string") el.remitoInput.value = remito;
+
     [el.respSelect, el.origenSelect, el.destinoSelect].forEach(s => s?.addEventListener("change", saveMeta));
-    if (el.remitoInput) {
-      el.remitoInput.addEventListener("input", (e) => {
-        const v = (e.target.value || "").replace(/\D+/g, "");
-        if (v !== e.target.value) e.target.value = v;
-        saveMeta();
-      });
-    }
+    // Solo números en bultos y remito
+    const digitsOnly = (e) => {
+      const v = (e.target.value || "").replace(/\D+/g, "");
+      if (v !== e.target.value) e.target.value = v;
+      saveMeta();
+    };
+    el.bultosInput?.addEventListener("input", digitsOnly);
+    el.remitoInput?.addEventListener("input", digitsOnly);
   }
   function saveMeta(){
     writeLocal(LS_META, {
       responsable: el.respSelect?.value || "",
       origen:      el.origenSelect?.value || "",
       destino:     el.destinoSelect?.value || "",
+      bultos:      el.bultosInput?.value || "",
       remito:      el.remitoInput?.value || "",
     });
   }
@@ -116,7 +122,7 @@
     if (navigator.vibrate) navigator.vibrate(80);
   }
 
-  // ====== CSV Load & Index (multi-archivo con diagnóstico) ======
+  // ====== CSV Load & Index (multi-archivo) ======
   async function loadAllCSVs(list){
     byCode.clear(); rows = [];
     const jobs = list.map(async (name) => {
@@ -149,18 +155,18 @@
     }
   }
 
-  // Normalización de clave para el match (evita problemas de caso/espacios)
+  // Normalización de clave para el match
   const key = (s) => String(s ?? "").trim().toUpperCase();
 
   function addToIndex(data, noOverride){
     if (!data.length) return;
     const keys = Object.keys(data[0] || {});
-    const codeKey = guessCodeColumn(keys); // columna de lookup
+    const codeKey = guessCodeColumn(keys);
     data.forEach(r => {
       const raw = r[codeKey];
       const k = key(raw);
       if (!k) return;
-      if (noOverride && byCode.has(k)) return; // respeta prioridad del primer CSV
+      if (noOverride && byCode.has(k)) return;
       byCode.set(k, r);
     });
   }
@@ -270,12 +276,40 @@
     }
   }
 
+  // Formato: YYMMDD DESTINO RESPONSABLE NB REM<REMITO>.txt
+  function resolveFilename(){
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth()+1).padStart(2,"0");
+    const dd = String(now.getDate()).padStart(2,"0");
+    const FECHA = `${yy}${mm}${dd}`;
+
+    const DESTINO = safeName((el.destinoSelect?.value || "").toUpperCase());
+    const RESPONSABLE = safeName((el.respSelect?.value || "").toUpperCase());
+    const BULTOS = (el.bultosInput?.value || "0");
+    const REMITO = (el.remitoInput?.value || "");
+
+    let base = `${FECHA} ${DESTINO} ${RESPONSABLE} ${BULTOS}B REM${REMITO}`;
+    base = base.trim();
+    return ensureTxt(sanitize(base));
+  }
+
+  // ====== Helpers: CSV, strings, etc. ======
   function withSuffix(name, suffix){
     const i = name.lastIndexOf(".");
     const base = i >= 0 ? name.slice(0, i) : name;
     const ext  = i >= 0 ? name.slice(i) : ".txt";
     return `${base} - ${suffix}${ext}`.replace(/[\\/:*?"<>|]+/g, "_");
   }
+  function ensureTxt(name){
+    return name.toLowerCase().endsWith(".txt") ? name : `${name}.txt`;
+  }
+  function sanitize(s){
+    // Permite espacios y acentos; elimina caracteres inválidos para nombre de archivo
+    return s.replace(/[\\/:*?"<>|]+/g, "_");
+  }
+  function safeName(s){ return s.normalize("NFC"); }
+
   function downloadString(content, fname){
     const blob = new Blob([content], {type: "text/plain;charset=utf-8"});
     const url = URL.createObjectURL(blob);
@@ -283,18 +317,6 @@
     a.href = url; a.download = fname;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
-  }
-
-  function resolveFilename(){
-    const now = new Date();
-    const pad = (n) => String(n).padStart(2,"0");
-    const FECHA = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
-    const RESPONSABLE = slug(el.respSelect?.value || "");
-    const ORIGEN      = slug(el.origenSelect?.value || "");
-    const DESTINO     = slug(el.destinoSelect?.value || "");
-    const REMITO      = (el.remitoInput?.value || "").toString();
-    let out = `pedido_${FECHA}_${RESPONSABLE}_${ORIGEN}_a_${DESTINO}_remito_${REMITO}.txt`;
-    return out.replace(/[\\/:*?"<>|]+/g, "_");
   }
 
   // ====== CSV robusto (autodetecta ; , | \t y comillas) ======
@@ -352,7 +374,7 @@
     return out;
   }
 
-  // ====== Helpers ======
+  // ====== Otros helpers ======
   function slug(s){ return (s||"").toString().normalize("NFD").replace(/\p{Diacritic}/gu,"").replace(/[^\w\-]+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,""); }
   function escapeHtml(s){
     return String(s).replace(/[&<>"']/g, (m) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
