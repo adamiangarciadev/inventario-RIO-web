@@ -1,4 +1,4 @@
-/* app.js — Pickeo simple: un código por línea en el TXT */
+/* app.js — Pickeo simple: un código por línea en el TXT + archivo de faltantes */
 ;(() => {
   "use strict";
 
@@ -225,13 +225,39 @@
 
   // ====== TXT ======
   function downloadTxt(){
-    // Un código por línea, en el orden escaneado, SOLO los ok
-    const lines = scans.filter(s => s.ok).map(s => {
+    // OK: un código por línea (orden escaneado)
+    const okLines = scans.filter(s => s.ok).map(s => {
       const row = byCode.get(s.code);
       return getOutputCode(row, s.code);
     });
-    const content = lines.join("\n");
-    const fname = resolveFilename(); // nombre por defecto con tokens
+
+    // Faltantes: únicos, en orden de primera aparición
+    const seen = new Set();
+    const missingLines = [];
+    scans.forEach(s => {
+      if (!s.ok && !seen.has(s.code)) {
+        seen.add(s.code);
+        missingLines.push(String(s.code));
+      }
+    });
+
+    const fnameBase = resolveFilename(); // nombre base (pedido_....txt)
+    downloadString(okLines.join("\n"), fnameBase);
+
+    if (missingLines.length){
+      const fnameMissing = withSuffix(fnameBase, "FALTA EQUIVALENCIA");
+      downloadString(missingLines.join("\n"), fnameMissing);
+    }
+  }
+
+  function withSuffix(name, suffix){
+    const i = name.lastIndexOf(".");
+    const base = i >= 0 ? name.slice(0, i) : name;
+    const ext  = i >= 0 ? name.slice(i) : ".txt";
+    return `${base} - ${suffix}${ext}`.replace(/[\\/:*?"<>|]+/g, "_");
+  }
+
+  function downloadString(content, fname){
     const blob = new Blob([content], {type: "text/plain;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
