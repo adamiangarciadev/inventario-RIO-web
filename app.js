@@ -226,13 +226,23 @@
     el.lastScans.innerHTML = recent || "";
   }
 
-  // Mantener foco para lectores HID
-  function keepFocus(){
-    if (!el.scanInput) return;
-    const focusIt = () => { if (document.activeElement !== el.scanInput) el.scanInput.focus(); };
-    setInterval(focusIt, 1200);
-    el.scanInput.addEventListener("blur", () => setTimeout(focusIt, 50));
-  }
+ // Mantener foco SOLO donde corresponde (sin robarlo a los selects/inputs)
+function keepFocus(){
+  if (!el.scanInput) return;
+  // Foco inicial al cargar
+  el.scanInput.focus();
+
+  // Si el usuario hace click fuera de controles interactivos, volvemos al input
+  document.addEventListener("click", (e) => {
+    const t = e.target;
+    const isInteractive = t.closest('input,select,textarea,button,a,label,[role="button"]');
+    if (!isInteractive) {
+      // re-enfoca solo si hizo click "en vacío"
+      setTimeout(() => el.scanInput.focus(), 0);
+    }
+  });
+}
+
 
   // ====== TXT ======
   function downloadTxt(){
