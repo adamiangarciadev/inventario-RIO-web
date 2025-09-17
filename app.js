@@ -1,20 +1,19 @@
-/* app.js — Pickeo simple: soporta equivalencia.csv + equivalencias2.csv */
+/* app.js — 2 CSV, debug de carga, match normalizado */
 ;(() => {
   "use strict";
 
   // ====== Config ======
   const RESPONSABLES = ["DAVID","DIEGO","JOEL","MARTIN","MIGUEL","NAHUEL","RICARDO","RODRIGO"];
   const SUCURSALES  = ["AVELLANEDA 2","NAZCA","LAMARCA","CORRIENTES","CORRIENTES 2","CASTELLI","QUILMES","MORENO"];
-  const CSV_FILES   = ["equivalencia.csv", "equivalencias2.csv"]; // ← se cargan ambos si existen
+  const CSV_FILES   = ["equivalencia.csv", "equivalencias2.csv"]; // ambos en la misma carpeta
   const LS_META  = "pickeo_meta_v1";
-  // Auto-Enter tras idle del escáner (ms)
-  const AUTOCOMMIT_IDLE_MS = 80; // 60–120 ms suele ir bien
-  const MIN_LEN_FOR_COMMIT = 3;  // evita commits por ruido muy corto
+  const AUTOCOMMIT_IDLE_MS = 80;
+  const MIN_LEN_FOR_COMMIT = 3;
 
   // ====== Estado ======
-  let rows = [];               // filas combinadas de los CSV
-  let byCode = new Map();      // índice: código escaneado -> fila
-  let scans = [];              // {code, ok, time}
+  let rows = [];
+  let byCode = new Map();   // key(code) -> row
+  let scans = [];
   let audioCtx = null;
   let scanTimer = null;
 
@@ -38,7 +37,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     setupSelectors();
     bindUI();
-    loadAllCSVs(CSV_FILES);   // ← carga ambos
+    loadAllCSVs(CSV_FILES);
     keepFocus();
   });
 
@@ -67,7 +66,7 @@
     fillOptions(el.respSelect, RESPONSABLES);
     fillOptions(el.origenSelect, SUCURSALES);
     fillOptions(el.destinoSelect, SUCURSALES);
-    const { responsable, origen, destino, remito } = readLocal(LS_META) || {};
+    const { responsable, origen, destino, remito } = readLocal("pickeo_meta_v1") || {};
     if (responsable && RESPONSABLES.includes(responsable)) el.respSelect.value = responsable;
     if (origen && SUCURSALES.includes(origen)) el.origenSelect.value = origen;
     if (destino && SUCURSALES.includes(destino)) el.destinoSelect.value = destino;
@@ -94,11 +93,7 @@
   function fillOptions(select, list){
     if(!select) return;
     select.innerHTML = "";
-    list.forEach(v => {
-      const opt = document.createElement("option");
-      opt.value = v; opt.textContent = v;
-      select.appendChild(opt);
-    });
+    list.forEach(v => { const o=document.createElement("option"); o.value=v; o.textContent=v; select.appendChild(o); });
   }
 
   // ====== Audio ======
@@ -111,7 +106,7 @@
     if (!audioCtx) return;
     const o = audioCtx.createOscillator();
     const g = audioCtx.createGain();
-    o.type="square"; o.frequency.value=220; // grave
+    o.type="square"; o.frequency.value=220;
     g.gain.value=0.0001;
     o.connect(g).connect(audioCtx.destination);
     o.start();
@@ -121,45 +116,52 @@
     if (navigator.vibrate) navigator.vibrate(80);
   }
 
-  // ====== CSV Load & Index (multi-archivo) ======
+  // ====== CSV Load & Index (multi-archivo con diagnóstico) ======
   async function loadAllCSVs(list){
     byCode.clear(); rows = [];
-    const jobs = list.map(name =>
-      fetch("./" + name, { cache: "no-store" })
-        .then(r => (r.ok ? r.text() : Promise.reject(new Error("nf"))))
-        .then(text => ({ name, ok:true, data: parseCSV(text) }))
-        .catch(() => ({ name, ok:false, data: [] }))
-    );
-    const results = await Promise.all(jobs);
-
-    // 1) indexar en orden: el primero de la lista tiene prioridad ante duplicados
-    results.forEach((res, idx) => {
-      if (!res.ok) return;
-      // acumular filas
-      rows = rows.concat(res.data);
-      // indexar: si el código ya existe, NO lo pisa (prioridad del primer archivo)
-      addToIndex(res.data, /*noOverride*/ true);
+    const jobs = list.map(async (name) => {
+      try{
+        const res = await fetch("./" + name, { cache: "no-store" });
+        if (!res.ok) throw new Error(String(res.status));
+        const text = await res.text();
+        const data = parseCSV(text);
+        addToIndex(data, /*noOverride*/ true);
+        rows = rows.concat(data);
+        return { name, ok: true, rows: data.length };
+      }catch(e){
+        return { name, ok: false, err: e?.message || "error" };
+      }
     });
 
-    // Estado visual
-    const loaded = results.filter(r => r.ok).length;
-    if (loaded === 0) {
+    const results = await Promise.all(jobs);
+    const okCount = results.filter(r => r.ok).length;
+
+    if (okCount === 0){
       showPill("danger","No se encontró ningún CSV");
-    } else if (loaded === list.length) {
-      showPill("ok",`Listo para pickear (${loaded} CSVs)`);
+      note("No se cargaron CSV. Revisá nombres y mayúsculas/minúsculas.");
+    } else if (okCount === list.length){
+      showPill("ok",`Listo (${okCount}/${list.length} CSV)`);
+      note(results.map(r => `OK ${r.name} (${r.rows})`).join(" · "));
     } else {
-      showPill("warn",`Listo con ${loaded}/${list.length} CSV`);
+      const misses = results.filter(r => !r.ok).map(r => r.name).join(", ");
+      showPill("warn",`Listo con ${okCount}/${list.length} CSV`);
+      note(`Faltó: ${misses}. Verificá que estén en la misma carpeta y con ese nombre exacto.`);
     }
   }
 
+  // Normalización de clave para el match (evita problemas de caso/espacios)
+  const key = (s) => String(s ?? "").trim().toUpperCase();
+
   function addToIndex(data, noOverride){
+    if (!data.length) return;
     const keys = Object.keys(data[0] || {});
     const codeKey = guessCodeColumn(keys); // columna de lookup
     data.forEach(r => {
-      const code = String(r[codeKey] ?? "").trim();
-      if (!code) return;
-      if (noOverride && byCode.has(code)) return;
-      byCode.set(code, r);
+      const raw = r[codeKey];
+      const k = key(raw);
+      if (!k) return;
+      if (noOverride && byCode.has(k)) return; // respeta prioridad del primer CSV
+      byCode.set(k, r);
     });
   }
 
@@ -172,7 +174,7 @@
     return keys.find(k => patterns.some(p => norm(k).includes(p))) || keys[0];
   }
 
-  // Preferir ARTÍCULO (código interno), si no: código/sku/cod del registro
+  // Preferir ARTÍCULO (código interno), sino código/sku/cod
   function getOutputCode(row, fallback){
     if (!row) return String(fallback ?? "");
     const keys = Object.keys(row);
@@ -187,10 +189,7 @@
   }
 
   // ====== Scan Handling ======
-  function scheduleAutoCommit(){
-    if (scanTimer) clearTimeout(scanTimer);
-    scanTimer = setTimeout(() => { autoCommit(); }, AUTOCOMMIT_IDLE_MS);
-  }
+  function scheduleAutoCommit(){ if (scanTimer) clearTimeout(scanTimer); scanTimer = setTimeout(() => { autoCommit(); }, AUTOCOMMIT_IDLE_MS); }
   function autoCommit(){
     const code = (el.scanInput.value || "").trim();
     if (code.length >= MIN_LEN_FOR_COMMIT){
@@ -204,7 +203,8 @@
   function processScan(code){
     const clean = String(code || "").trim();
     if (!clean){ flash("err"); return; }
-    const hit = byCode.has(clean);
+    const k = key(clean);
+    const hit = byCode.has(k);
     scans.unshift({ code: clean, ok: hit, time: new Date().toISOString() });
     scans = scans.slice(0, 5000);
     if (!hit){
@@ -247,19 +247,17 @@
 
   // ====== TXT ======
   function downloadTxt(){
-    // OK: un código por línea (orden escaneado)
     const okLines = scans.filter(s => s.ok).map(s => {
-      const row = byCode.get(s.code);
+      const row = byCode.get(key(s.code));
       return getOutputCode(row, s.code);
     });
 
-    // Faltantes: únicos, en orden de primera aparición
     const seen = new Set();
     const missingLines = [];
     scans.forEach(s => {
-      if (!s.ok && !seen.has(s.code)) {
-        seen.add(s.code);
-        missingLines.push(String(s.code));
+      if (!s.ok){
+        const k = key(s.code);
+        if (!seen.has(k)){ seen.add(k); missingLines.push(String(s.code)); }
       }
     });
 
@@ -278,7 +276,6 @@
     const ext  = i >= 0 ? name.slice(i) : ".txt";
     return `${base} - ${suffix}${ext}`.replace(/[\\/:*?"<>|]+/g, "_");
   }
-
   function downloadString(content, fname){
     const blob = new Blob([content], {type: "text/plain;charset=utf-8"});
     const url = URL.createObjectURL(blob);
@@ -306,24 +303,19 @@
     if (!lines.length) return [];
     const sep = detectDelimiter(lines[0], lines[1]); // ; , | \t
     const rawHeaders = splitCSVLine(lines[0], sep);
-    // deduplicar encabezados repetidos: Descripción_2, etc.
+    // deduplicar encabezados
     const seen = {};
     const headers = rawHeaders.map(h => {
       let k = String(h || "").trim();
       if (!k) k = "COL";
-      if (seen[k]) {
-        let n = 2;
-        while (seen[`${k}_${n}`]) n++;
-        k = `${k}_${n}`;
-      }
-      seen[k] = true;
-      return k;
+      if (seen[k]) { let n = 2; while (seen[`${k}_${n}`]) n++; k = `${k}_${n}`; }
+      seen[k] = true; return k;
     });
     const out = [];
     for (let i=1;i<lines.length;i++){
       const cells = splitCSVLine(lines[i], sep);
       const obj = {};
-      headers.forEach((h,idx) => obj[h] = cells[idx] ?? "");
+      headers.forEach((h,idx) => obj[h] = (cells[idx] ?? "").trim());
       out.push(obj);
     }
     return out;
@@ -342,7 +334,7 @@
     const totals = cands.map(ch => (score(l1,ch)+score(l2,ch)));
     let best = 0, bestIdx = 0;
     totals.forEach((n,idx) => { if(n>best){ best=n; bestIdx=idx; } });
-    return best>0 ? cands[bestIdx] : ";"; // default a ; (tu formato)
+    return best>0 ? cands[bestIdx] : ";";
   }
   function splitCSVLine(line, sep){
     const out = []; let cur=""; let q=false;
@@ -357,7 +349,7 @@
       }
     }
     out.push(cur);
-    return out.map(s => s.trim());
+    return out;
   }
 
   // ====== Helpers ======
