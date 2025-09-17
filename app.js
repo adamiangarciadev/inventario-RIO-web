@@ -1,4 +1,4 @@
-/* app.js — Pickeo con escáner. */
+/* app.js — Pickeo simple: un código por línea en el TXT */
 ;(() => {
   "use strict";
 
@@ -7,14 +7,13 @@
   const SUCURSALES  = ["AVELLANEDA 2","NAZCA","LAMARCA","CORRIENTES","CORRIENTES 2","CASTELLI","QUILMES","MORENO"];
   const DEFAULT_CSV = "equivalencia.csv";
   const LS_META  = "pickeo_meta_v1";
-  const LS_PREFS = "pickeo_prefs_v1";
   // Auto-Enter tras idle del escáner (ms)
-  const AUTOCOMMIT_IDLE_MS = 80; // ajustable 60–120 ms
+  const AUTOCOMMIT_IDLE_MS = 80; // 60–120 ms suele ir bien
   const MIN_LEN_FOR_COMMIT = 3;  // evita commits por ruido muy corto
 
   // ====== Estado ======
-  let rows = [];               // filas del CSV (objetos)
-  let byCode = new Map();      // code -> row
+  let rows = [];               // filas del CSV
+  let byCode = new Map();      // índice: código escaneado -> fila
   let scans = [];              // {code, ok, time}
   let audioCtx = null;
   let scanTimer = null;
@@ -22,36 +21,28 @@
   // ====== Elementos ======
   const $ = (sel, ctx=document) => ctx.querySelector(sel);
   const el = {
-    // pill
     readyPill: $("#readyPill"),
     pillText:  $("#pillText"),
-    // selects
     respSelect:   $("#respSelect"),
     origenSelect: $("#origenSelect"),
     destinoSelect:$("#destinoSelect"),
     remitoInput:  $("#remitoInput"),
-    // scan
     scanInput: $("#scanInput"),
     scanCount: $("#scanCount"),
     noti:       $("#noti"),
     lastScans:  $("#lastScans"),
-    // download
-    sep:         $("#sep"),
-    fname:       $("#fname"),
     downloadBtn: $("#downloadBtn"),
-    clearBtn:    $("#clearBtn"),
   };
 
   // ====== Init ======
   document.addEventListener("DOMContentLoaded", () => {
     setupSelectors();
-    restorePrefs();
     bindUI();
     // Autoload equivalencia.csv
     loadProjectCSV(DEFAULT_CSV).catch(() => {
       showPill("danger", "No se encontró equivalencia.csv");
     });
-    // Mantener listo el input de escaneo (sin robar foco a otros controles)
+    // Mantener listo el input (sin robar foco a otros controles)
     keepFocus();
   });
 
@@ -59,37 +50,20 @@
     if (el.scanInput){
       el.scanInput.addEventListener("keydown", (e) => {
         ensureAudio();
-        // Si el escáner ya manda Enter, también funciona
         if (e.key === "Enter"){
           e.preventDefault();
           const code = (el.scanInput.value || "").trim();
           processScan(code);
-          el.scanInput.value = "";   // limpiar
-          el.scanInput.focus();      // listo para el próximo
+          el.scanInput.value = "";
+          el.scanInput.focus();
           clearTimeout(scanTimer); scanTimer = null;
           return;
         }
-        // Para cualquier otra tecla, reprogramamos autocommit
         scheduleAutoCommit();
       });
       el.scanInput.addEventListener("input", () => { ensureAudio(); scheduleAutoCommit(); });
     }
     if (el.downloadBtn) el.downloadBtn.addEventListener("click", downloadTxt);
-    if (el.clearBtn)    el.clearBtn.addEventListener("click", () => { scans = []; renderLast(); });
-
-    // Prefs
-    if (el.sep)   el.sep.addEventListener("change", savePrefs);
-    if (el.fname) el.fname.addEventListener("change", savePrefs);
-
-    // Meta
-    [el.respSelect, el.origenSelect, el.destinoSelect].forEach(s => s?.addEventListener("change", saveMeta));
-    if (el.remitoInput) {
-      el.remitoInput.addEventListener("input", (e) => {
-        const v = (e.target.value || "").replace(/\D+/g, "");
-        if (v !== e.target.value) e.target.value = v;
-        saveMeta();
-      });
-    }
   }
 
   // ====== Selectors / LocalStorage ======
@@ -102,6 +76,15 @@
     if (origen && SUCURSALES.includes(origen)) el.origenSelect.value = origen;
     if (destino && SUCURSALES.includes(destino)) el.destinoSelect.value = destino;
     if (typeof remito === "string") el.remitoInput.value = remito;
+    // guardar cambios
+    [el.respSelect, el.origenSelect, el.destinoSelect].forEach(s => s?.addEventListener("change", saveMeta));
+    if (el.remitoInput) {
+      el.remitoInput.addEventListener("input", (e) => {
+        const v = (e.target.value || "").replace(/\D+/g, "");
+        if (v !== e.target.value) e.target.value = v;
+        saveMeta();
+      });
+    }
   }
   function saveMeta(){
     writeLocal(LS_META, {
@@ -111,14 +94,8 @@
       remito:      el.remitoInput?.value || "",
     });
   }
-  function savePrefs(){
-    writeLocal(LS_PREFS, { sep: el.sep.value, fname: el.fname.value });
-  }
-  function restorePrefs(){
-    const p = readLocal(LS_PREFS) || {};
-    if (p.sep)   el.sep.value = p.sep;
-    if (p.fname) el.fname.value = p.fname;
-  }
+  function writeLocal(k, obj){ try{ localStorage.setItem(k, JSON.stringify(obj)); }catch{} }
+  function readLocal(k){ try{ const r = localStorage.getItem(k); return r? JSON.parse(r): null; }catch{ return null; } }
   function fillOptions(select, list){
     if(!select) return;
     select.innerHTML = "";
@@ -128,8 +105,6 @@
       select.appendChild(opt);
     });
   }
-  function writeLocal(k, obj){ try{ localStorage.setItem(k, JSON.stringify(obj)); }catch{} }
-  function readLocal(k){ try{ const r = localStorage.getItem(k); return r? JSON.parse(r): null; }catch{ return null; } }
 
   // ====== Audio ======
   function ensureAudio(){
@@ -145,7 +120,6 @@
     g.gain.value=0.0001;
     o.connect(g).connect(audioCtx.destination);
     o.start();
-    // envolvente rápida
     g.gain.exponentialRampToValueAtTime(0.3, audioCtx.currentTime + 0.01);
     g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.22);
     o.stop(audioCtx.currentTime + 0.25);
@@ -166,7 +140,7 @@
   function indexCodes(data){
     byCode.clear();
     const keys = Object.keys(data[0] || {});
-    const codeKey = guessCodeColumn(keys);
+    const codeKey = guessCodeColumn(keys); // columna de lookup
     data.forEach(r => {
       const code = String(r[codeKey] ?? "").trim();
       if (code) byCode.set(code, r);
@@ -175,12 +149,22 @@
 
   function guessCodeColumn(keys){
     const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu,"");
-    const patterns = ["equivalencia","equiv","codigo","código","cod","sku","ean","barra","barcode"];
+    const patterns = ["equivalencia","equiv","codigo_barras","barra","barcode","ean","scann","scan","lectura","codigo","código","sku","cod"];
     return keys.find(k => patterns.some(p => norm(k).includes(p))) || keys[0];
   }
 
+  function getOutputCode(row, fallback){
+    if (!row) return String(fallback ?? "");
+    const keys = Object.keys(row);
+    const pref = findKey(keys, ["codigo","código","sku","articulo","artículo","cod"]);
+    return String((pref ? row[pref] : fallback) ?? "");
+  }
+  function findKey(keys, pats){
+    const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu,"");
+    return keys.find(k => pats.some(p => norm(k).includes(p)));
+  }
+
   // ====== Scan Handling ======
-  // Autocommit: si no llega Enter desde el escáner, confirmamos tras una breve pausa
   function scheduleAutoCommit(){
     if (scanTimer) clearTimeout(scanTimer);
     scanTimer = setTimeout(() => { autoCommit(); }, AUTOCOMMIT_IDLE_MS);
@@ -189,8 +173,8 @@
     const code = (el.scanInput.value || "").trim();
     if (code.length >= MIN_LEN_FOR_COMMIT){
       processScan(code);
-      el.scanInput.value = "";  // limpiar
-      el.scanInput.focus();     // listo para el próximo
+      el.scanInput.value = "";
+      el.scanInput.focus();
     }
     scanTimer = null;
   }
@@ -200,7 +184,7 @@
     if (!clean){ flash("err"); return; }
     const hit = byCode.has(clean);
     scans.unshift({ code: clean, ok: hit, time: new Date().toISOString() });
-    scans = scans.slice(0, 2000); // limitar
+    scans = scans.slice(0, 5000);
     if (!hit){
       flash("err"); beepError(); note(`No encontrado: ${clean}`);
     } else {
@@ -212,7 +196,7 @@
   function flash(kind){
     if (!el.scanInput) return;
     el.scanInput.classList.remove("ok","err");
-    void el.scanInput.offsetWidth; // reflow
+    void el.scanInput.offsetWidth;
     el.scanInput.classList.add(kind);
     setTimeout(() => el.scanInput.classList.remove(kind), 220);
   }
@@ -232,9 +216,7 @@
   // Mantener foco SOLO donde corresponde (sin robarlo a los selects/inputs)
   function keepFocus(){
     if (!el.scanInput) return;
-    // Foco inicial
     el.scanInput.focus();
-    // Si se hace click “en vacío”, devolver foco al input
     document.addEventListener("click", (e) => {
       const isInteractive = e.target.closest('input,select,textarea,button,a,label,[role="button"]');
       if (!isInteractive) setTimeout(() => el.scanInput.focus(), 0);
@@ -243,32 +225,13 @@
 
   // ====== TXT ======
   function downloadTxt(){
-    const sep = el.sep.value === "\\t" ? "\t" : el.sep.value;
-    const counts = new Map(); // code -> {cant, row}
-    scans.filter(s => s.ok).forEach(s => {
+    // Un código por línea, en el orden escaneado, SOLO los ok
+    const lines = scans.filter(s => s.ok).map(s => {
       const row = byCode.get(s.code);
-      const cur = counts.get(s.code) || { cant: 0, row };
-      cur.cant += 1;
-      counts.set(s.code, cur);
+      return getOutputCode(row, s.code);
     });
-    // Detectar columnas talla/color si existen
-    const anyRow = (counts.size ? [...counts.values()][0].row : null) || {};
-    const keys = Object.keys(anyRow || {});
-    const hasTalle = keys.some(k => norm(k).includes("talle") || norm(k).includes("size"));
-    const hasColor = keys.some(k => norm(k).includes("color") || norm(k).includes("col"));
-    const codeKey = guessCodeColumn(keys);
-
-    const lines = [];
-    counts.forEach(({cant, row}, code) => {
-      const base = [ String(row?.[codeKey] ?? code) ];
-      if (hasTalle) base.push(String(row?.[keys.find(k => /talle|size/i.test(k))] ?? ""));
-      if (hasColor) base.push(String(row?.[keys.find(k => /color|col\b/i.test(k))] ?? ""));
-      base.push(String(cant));
-      lines.push(base.join(sep));
-    });
-
     const content = lines.join("\n");
-    const fname = resolveFilename(el.fname.value);
+    const fname = resolveFilename(); // nombre por defecto con tokens
     const blob = new Blob([content], {type: "text/plain;charset=utf-8"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -277,7 +240,7 @@
     URL.revokeObjectURL(url);
   }
 
-  function resolveFilename(tpl){
+  function resolveFilename(){
     const now = new Date();
     const pad = (n) => String(n).padStart(2,"0");
     const FECHA = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
@@ -285,17 +248,13 @@
     const ORIGEN      = slug(el.origenSelect?.value || "");
     const DESTINO     = slug(el.destinoSelect?.value || "");
     const REMITO      = (el.remitoInput?.value || "").toString();
-    const map = { "${FECHA}": FECHA, "${RESPONSABLE}": RESPONSABLE, "${ORIGEN}": ORIGEN, "${DESTINO}": DESTINO, "${REMITO}": REMITO };
-    let out = tpl || "pedido_${FECHA}.txt";
-    Object.entries(map).forEach(([k,v]) => { out = out.replaceAll(k, v); });
+    let out = `pedido_${FECHA}_${RESPONSABLE}_${ORIGEN}_a_${DESTINO}_remito_${REMITO}.txt`;
     return out.replace(/[\\/:*?"<>|]+/g, "_");
   }
 
   // ====== Helpers ======
   function parseCSV(text){
     const lines = text.split(/\r?\n/);
-    if (!lines.length) return [];
-    // quitar líneas vacías al final
     while (lines.length && !lines[lines.length-1].trim()) lines.pop();
     if (!lines.length) return [];
     const headers = splitCSVLine(lines[0]);
@@ -317,16 +276,9 @@
     out.push(cur);
     return out;
   }
-  function norm(s){ return (s||"").toString().toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu,""); }
-  function slug(s){ return (s||"").toString().normalize("NFD").replace(/\p{Diacritic}/gu,"").replace(/[^\w\-]+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,""); }
+  function slug(s){ return (s||"").toString().normalize("NFD").replace(/\\p{Diacritic}/gu,"").replace(/[^\\w\\-]+/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,""); }
   function escapeHtml(s){
-    return String(s).replace(/[&<>"']/g, (m) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      "\"": "&quot;",
-      "'": "&#39;",
-    }[m]));
+    return String(s).replace(/[&<>"']/g, (m) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
   }
 
   // ====== Pill ======

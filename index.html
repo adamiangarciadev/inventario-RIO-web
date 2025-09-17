@@ -32,7 +32,7 @@
           <select id="destinoSelect" class="input"></select>
         </label>
         <label>Número de remito
-          <input id="remitoInput" type="text" inputmode="numeric" pattern="\d*" placeholder="Solo números" class="input" />
+          <input id="remitoInput" type="text" inputmode="numeric" pattern="\\d*" placeholder="Solo números" class="input" />
         </label>
         <label class="spacer"></label>
         <span class="badge">Se guarda en tu navegador</span>
@@ -55,22 +55,10 @@
     <section class="card">
       <h2>Descargar TXT</h2>
       <div class="row">
-        <label>Separador TXT:
-          <select id="sep">
-            <option value=";">Punto y coma ;</option>
-            <option value=",">Coma ,</option>
-            <option value="|">Pipe |</option>
-            <option value="\t">Tabulación \t</option>
-          </select>
-        </label>
-        <label>Nombre de archivo:
-          <input id="fname" type="text" value="pedido_${FECHA}_${RESPONSABLE}_${ORIGEN}_a_${DESTINO}_remito_${REMITO}.txt" class="input">
-        </label>
         <label class="spacer"></label>
-        <button id="downloadBtn" class="btn primary">Descargar .txt</button>
-        <button id="clearBtn" class="btn ghost">Borrar lista</button>
+        <button id="downloadBtn" class="btn primary">Descargar archivo</button>
       </div>
-      <p class="muted small">Formato: si el CSV tiene columnas <em>talle</em> y/o <em>color</em>, se incluirán; de lo contrario solo <em>codigo</em> y <em>cantidad</em>.</p>
+      <p class="muted small">Se genera un TXT con <em>un código por línea</em> en el orden escaneado.</p>
     </section>
   </main>
 
