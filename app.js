@@ -1,18 +1,18 @@
-/* app.js — Pickeo simple: un código por línea en el TXT + archivo de faltantes */
+/* app.js — Pickeo simple: soporta equivalencia.csv + equivalencias2.csv */
 ;(() => {
   "use strict";
 
   // ====== Config ======
   const RESPONSABLES = ["DAVID","DIEGO","JOEL","MARTIN","MIGUEL","NAHUEL","RICARDO","RODRIGO"];
   const SUCURSALES  = ["AVELLANEDA 2","NAZCA","LAMARCA","CORRIENTES","CORRIENTES 2","CASTELLI","QUILMES","MORENO"];
-  const DEFAULT_CSV = "equivalencia.csv";
+  const CSV_FILES   = ["equivalencia.csv", "equivalencias2.csv"]; // ← se cargan ambos si existen
   const LS_META  = "pickeo_meta_v1";
   // Auto-Enter tras idle del escáner (ms)
   const AUTOCOMMIT_IDLE_MS = 80; // 60–120 ms suele ir bien
   const MIN_LEN_FOR_COMMIT = 3;  // evita commits por ruido muy corto
 
   // ====== Estado ======
-  let rows = [];               // filas del CSV
+  let rows = [];               // filas combinadas de los CSV
   let byCode = new Map();      // índice: código escaneado -> fila
   let scans = [];              // {code, ok, time}
   let audioCtx = null;
@@ -38,9 +38,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     setupSelectors();
     bindUI();
-    loadProjectCSV(DEFAULT_CSV).catch(() => {
-      showPill("danger", "No se encontró equivalencia.csv");
-    });
+    loadAllCSVs(CSV_FILES);   // ← carga ambos
     keepFocus();
   });
 
@@ -123,34 +121,58 @@
     if (navigator.vibrate) navigator.vibrate(80);
   }
 
-  // ====== CSV Load & Index ======
-  async function loadProjectCSV(path){
-    const target = (path || DEFAULT_CSV).replace(/^\/*/, "");
-    const res = await fetch("./" + target, { cache: "no-store" });
-    if (!res.ok) throw new Error("CSV not found");
-    const text = await res.text();
-    rows = parseCSV(text);     // <-- autodetecta ; , | \t + comillas
-    indexCodes(rows);
-    showPill("ok","Listo para pickear");
+  // ====== CSV Load & Index (multi-archivo) ======
+  async function loadAllCSVs(list){
+    byCode.clear(); rows = [];
+    const jobs = list.map(name =>
+      fetch("./" + name, { cache: "no-store" })
+        .then(r => (r.ok ? r.text() : Promise.reject(new Error("nf"))))
+        .then(text => ({ name, ok:true, data: parseCSV(text) }))
+        .catch(() => ({ name, ok:false, data: [] }))
+    );
+    const results = await Promise.all(jobs);
+
+    // 1) indexar en orden: el primero de la lista tiene prioridad ante duplicados
+    results.forEach((res, idx) => {
+      if (!res.ok) return;
+      // acumular filas
+      rows = rows.concat(res.data);
+      // indexar: si el código ya existe, NO lo pisa (prioridad del primer archivo)
+      addToIndex(res.data, /*noOverride*/ true);
+    });
+
+    // Estado visual
+    const loaded = results.filter(r => r.ok).length;
+    if (loaded === 0) {
+      showPill("danger","No se encontró ningún CSV");
+    } else if (loaded === list.length) {
+      showPill("ok",`Listo para pickear (${loaded} CSVs)`);
+    } else {
+      showPill("warn",`Listo con ${loaded}/${list.length} CSV`);
+    }
   }
 
-  function indexCodes(data){
-    byCode.clear();
+  function addToIndex(data, noOverride){
     const keys = Object.keys(data[0] || {});
-    const codeKey = guessCodeColumn(keys);   // columna para BUSCAR (código escaneado)
+    const codeKey = guessCodeColumn(keys); // columna de lookup
     data.forEach(r => {
       const code = String(r[codeKey] ?? "").trim();
-      if (code) byCode.set(code, r);
+      if (!code) return;
+      if (noOverride && byCode.has(code)) return;
+      byCode.set(code, r);
     });
   }
 
   function guessCodeColumn(keys){
     const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu,"");
-    const patterns = ["codigo","código","codigo_barras","barra","barcode","ean","lectura","scan","equivalencia","equiv","sku","cod"];
+    const patterns = [
+      "codigo_barras","codigo barras","barra","barcode","ean","lectura","scan",
+      "codigo","código","equivalencia","equiv","sku","cod"
+    ];
     return keys.find(k => patterns.some(p => norm(k).includes(p))) || keys[0];
   }
 
-  // Para el TXT final: priorizar ARTÍCULO (código interno), luego código/sku/cod
+  // Preferir ARTÍCULO (código interno), si no: código/sku/cod del registro
   function getOutputCode(row, fallback){
     if (!row) return String(fallback ?? "");
     const keys = Object.keys(row);
@@ -241,7 +263,7 @@
       }
     });
 
-    const fnameBase = resolveFilename(); // nombre base (pedido_....txt)
+    const fnameBase = resolveFilename();
     downloadString(okLines.join("\n"), fnameBase);
 
     if (missingLines.length){
@@ -278,13 +300,13 @@
     return out.replace(/[\\/:*?"<>|]+/g, "_");
   }
 
-  // ====== CSV robusto (autodetecta delimitador y maneja comillas) ======
+  // ====== CSV robusto (autodetecta ; , | \t y comillas) ======
   function parseCSV(text){
     const lines = text.split(/\r?\n/).filter(l => l.length>0);
     if (!lines.length) return [];
     const sep = detectDelimiter(lines[0], lines[1]); // ; , | \t
     const rawHeaders = splitCSVLine(lines[0], sep);
-    // dedup de encabezados
+    // deduplicar encabezados repetidos: Descripción_2, etc.
     const seen = {};
     const headers = rawHeaders.map(h => {
       let k = String(h || "").trim();
@@ -320,7 +342,7 @@
     const totals = cands.map(ch => (score(l1,ch)+score(l2,ch)));
     let best = 0, bestIdx = 0;
     totals.forEach((n,idx) => { if(n>best){ best=n; bestIdx=idx; } });
-    return best>0 ? cands[bestIdx] : ";"; // default a ; para tu formato
+    return best>0 ? cands[bestIdx] : ";"; // default a ; (tu formato)
   }
   function splitCSVLine(line, sep){
     const out = []; let cur=""; let q=false;
@@ -335,7 +357,6 @@
       }
     }
     out.push(cur);
-    // trim de espacios externos
     return out.map(s => s.trim());
   }
 
