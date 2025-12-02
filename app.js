@@ -9,6 +9,7 @@
   const LS_META  = "pickeo_meta_v1";
   const AUTOCOMMIT_IDLE_MS = 80;
   const MIN_LEN_FOR_COMMIT = 3;
+  const LS_SCRIPT_URL = "inventario_script_url_v1";
 
   // ====== Estado ======
   let rows = [];
@@ -16,6 +17,7 @@
   let scans = [];
   let audioCtx = null;
   let scanTimer = null;
+  let SCRIPT_URL = "";      // se carga al iniciar desde localStorage o usa un valor por defecto
 
   // ====== Elementos ======
   const $ = (sel, ctx=document) => ctx.querySelector(sel);
@@ -40,6 +42,7 @@
     bindUI();
     loadAllCSVs(CSV_FILES);
     keepFocus();
+    loadScriptUrlFromLocal(); // carga la URL del Apps Script (o usa la tuya por defecto)
   });
 
   function bindUI(){
@@ -84,6 +87,7 @@
     el.bultosInput?.addEventListener("input", digitsOnly);
     el.remitoInput?.addEventListener("input", digitsOnly);
   }
+
   function saveMeta(){
     writeLocal(LS_META, {
       responsable: el.respSelect?.value || "",
@@ -93,12 +97,34 @@
       remito:      el.remitoInput?.value || "",
     });
   }
+
   function writeLocal(k, obj){ try{ localStorage.setItem(k, JSON.stringify(obj)); }catch{} }
   function readLocal(k){ try{ const r = localStorage.getItem(k); return r? JSON.parse(r): null; }catch{ return null; } }
+
   function fillOptions(select, list){
     if(!select) return;
     select.innerHTML = "";
     list.forEach(v => { const o=document.createElement("option"); o.value=v; o.textContent=v; select.appendChild(o); });
+  }
+
+  // ====== Configuración de SCRIPT_URL (Apps Script) ======
+  function loadScriptUrlFromLocal(){
+    const saved = readLocal(LS_SCRIPT_URL);
+    if (saved && typeof saved.url === "string" && saved.url.trim()){
+      SCRIPT_URL = saved.url.trim();
+    } else {
+      // Valor por defecto: tu Web App de Apps Script
+      SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzpGGyA_acQYDzZldHnameD5Xwo8hGW6-eaFjAlDZfljsuU5tqkeCb8Nizk_e2CitDU/exec";
+      // Si más adelante querés que cada local tenga su propia URL,
+      // podés guardar otra en localStorage llamando a setScriptUrl(url).
+    }
+  }
+
+  function setScriptUrl(url){
+    const u = String(url || "").trim();
+    if (!u) return;
+    SCRIPT_URL = u;
+    writeLocal(LS_SCRIPT_URL, { url: u });
   }
 
   // ====== Audio ======
@@ -258,8 +284,19 @@
       return getOutputCode(row, s.code);
     });
 
+    const content = lines.join("\n");
     const fnameBase = resolveFilename();
-    downloadString(lines.join("\n"), fnameBase);
+
+    // 1) Descarga local
+    downloadString(content, fnameBase);
+
+    // 2) Enviar copia al Google Drive vía Apps Script
+    const folderName = (el.destinoSelect?.value || "INVENTARIO").toString().toUpperCase();
+    enviarArchivoAGoogleDrive({
+      content: content,
+      fileName: fnameBase,
+      folderName: folderName
+    });
   }
 
   // Formato: YYMMDD DESTINO RESPONSABLE NB REM<REMITO>.txt
@@ -278,6 +315,35 @@
     let base = `${FECHA} ${DESTINO} ${RESPONSABLE} ${BULTOS}B REM${REMITO}`;
     base = base.trim();
     return ensureTxt(sanitize(base));
+  }
+
+  // ====== Envío a Apps Script (Google Drive) ======
+  function enviarArchivoAGoogleDrive({ content, fileName, folderName }){
+    if (!SCRIPT_URL){
+      console.warn("No hay SCRIPT_URL configurada para enviar a Google Drive");
+      return;
+    }
+
+    const payload = {
+      content: content,
+      fileName: fileName,
+      folderName: folderName,
+      mimeType: "text/plain"
+    };
+
+    try {
+      fetch(SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors", // no podemos leer la respuesta, pero el archivo se crea igual
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify(payload)
+      });
+      console.log("Archivo enviado a Apps Script para guardar en Drive:", fileName, "=> carpeta", folderName);
+    } catch (err) {
+      console.error("Error al enviar a Apps Script:", err);
+    }
   }
 
   // ====== Helpers ======
@@ -317,6 +383,7 @@
     }
     return out;
   }
+
   function detectDelimiter(l1, l2=""){
     const cands = [",",";","|","\t"];
     const score = (line, ch) => {
@@ -333,6 +400,7 @@
     totals.forEach((n,idx) => { if(n>best){ best=n; bestIdx=idx; } });
     return best>0 ? cands[bestIdx] : ";";
   }
+
   function splitCSVLine(line, sep){
     const out = []; let cur=""; let q=false;
     for(let i=0;i<line.length;i++){
