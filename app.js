@@ -296,7 +296,7 @@
     const BULTOS = (el.bultosInput?.value || "0");
     const REMITO = (el.remitoInput?.value || "");
 
-    let base = `${FECHA} ${DESTINO} ${RESPONSABLE} ${BULTOS}B REM${REMITO} ${OK}`;
+    let base = `${FECHA} ${DESTINO} ${RESPONSABLE} ${BULTOS}B REM${REMITO} OK`;
     base = base.trim();
     return ensureTxt(sanitize(base));
   }
