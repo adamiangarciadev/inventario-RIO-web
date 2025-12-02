@@ -9,7 +9,13 @@
   const LS_META  = "pickeo_meta_v1";
   const AUTOCOMMIT_IDLE_MS = 80;
   const MIN_LEN_FOR_COMMIT = 3;
-  const LS_SCRIPT_URL = "inventario_script_url_v1";
+
+  // ====== URLs de Apps Script por ORIGEN ======
+  // SARMIENTO
+  const SCRIPT_URL_SARMIENTO = "https://script.google.com/macros/s/AKfycbzpGGyA_acQYDzZldHnameD5Xwo8hGW6-eaFjAlDZfljsuU5tqkeCb8Nizk_e2CitDU/exec";
+
+  // AV2
+  const SCRIPT_URL_AV2 = "https://script.google.com/macros/s/AKfycbwPNl9zyKtgun43MijeiFL3BtGTyM79_a4pocTYlYOr9Q5KllWra6s2HjbGIr11XFGy9w/exec";
 
   // ====== Estado ======
   let rows = [];
@@ -17,7 +23,6 @@
   let scans = [];
   let audioCtx = null;
   let scanTimer = null;
-  let SCRIPT_URL = "";      // se carga al iniciar desde localStorage o usa un valor por defecto
 
   // ====== Elementos ======
   const $ = (sel, ctx=document) => ctx.querySelector(sel);
@@ -42,7 +47,6 @@
     bindUI();
     loadAllCSVs(CSV_FILES);
     keepFocus();
-    loadScriptUrlFromLocal(); // carga la URL del Apps Script (o usa la tuya por defecto)
   });
 
   function bindUI(){
@@ -105,26 +109,6 @@
     if(!select) return;
     select.innerHTML = "";
     list.forEach(v => { const o=document.createElement("option"); o.value=v; o.textContent=v; select.appendChild(o); });
-  }
-
-  // ====== Configuración de SCRIPT_URL (Apps Script) ======
-  function loadScriptUrlFromLocal(){
-    const saved = readLocal(LS_SCRIPT_URL);
-    if (saved && typeof saved.url === "string" && saved.url.trim()){
-      SCRIPT_URL = saved.url.trim();
-    } else {
-      // Valor por defecto: tu Web App de Apps Script
-      SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzpGGyA_acQYDzZldHnameD5Xwo8hGW6-eaFjAlDZfljsuU5tqkeCb8Nizk_e2CitDU/exec";
-      // Si más adelante querés que cada local tenga su propia URL,
-      // podés guardar otra en localStorage llamando a setScriptUrl(url).
-    }
-  }
-
-  function setScriptUrl(url){
-    const u = String(url || "").trim();
-    if (!u) return;
-    SCRIPT_URL = u;
-    writeLocal(LS_SCRIPT_URL, { url: u });
   }
 
   // ====== Audio ======
@@ -290,7 +274,7 @@
     // 1) Descarga local
     downloadString(content, fnameBase);
 
-    // 2) Enviar copia al Google Drive vía Apps Script
+    // 2) Enviar copia al Google Drive vía Apps Script según ORIGEN
     const folderName = (el.destinoSelect?.value || "INVENTARIO").toString().toUpperCase();
     enviarArchivoAGoogleDrive({
       content: content,
@@ -318,9 +302,20 @@
   }
 
   // ====== Envío a Apps Script (Google Drive) ======
+  function getScriptUrlForOrigen(origen){
+    const o = String(origen || "").toUpperCase().trim();
+    if (o === "SARMIENTO") return SCRIPT_URL_SARMIENTO;
+    if (o === "AV2")       return SCRIPT_URL_AV2;
+    // acá después podemos sumar NAZCA, CO2, etc. si cada uno tiene su propio script
+    return "";
+  }
+
   function enviarArchivoAGoogleDrive({ content, fileName, folderName }){
-    if (!SCRIPT_URL){
-      console.warn("No hay SCRIPT_URL configurada para enviar a Google Drive");
+    const origen = el.origenSelect?.value || "";
+    const scriptUrl = getScriptUrlForOrigen(origen);
+
+    if (!scriptUrl){
+      console.warn("No hay SCRIPT_URL configurada para el origen:", origen);
       return;
     }
 
@@ -332,7 +327,7 @@
     };
 
     try {
-      fetch(SCRIPT_URL, {
+      fetch(scriptUrl, {
         method: "POST",
         mode: "no-cors", // no podemos leer la respuesta, pero el archivo se crea igual
         headers: {
@@ -340,7 +335,12 @@
         },
         body: JSON.stringify(payload)
       });
-      console.log("Archivo enviado a Apps Script para guardar en Drive:", fileName, "=> carpeta", folderName);
+      console.log(
+        "Archivo enviado a Apps Script para guardar en Drive:",
+        fileName,
+        "=> carpeta", folderName,
+        "ORIGEN:", origen
+      );
     } catch (err) {
       console.error("Error al enviar a Apps Script:", err);
     }
