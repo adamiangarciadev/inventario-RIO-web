@@ -304,14 +304,16 @@
   }
 
   // ====== Envío a Apps Script (Google Drive) ======
-  function getScriptUrlForOrigen(origen){
-    const o = String(origen || "").toUpperCase().trim();
-    if (o === "SARMIENTO") return SCRIPT_URL_SARMIENTO;
-    if (o === "AV2")       return SCRIPT_URL_AV2;
-    if (o === "PUEYRREDON") return SCRIPT_URL_PUEYRREDON;
-    // acá después podemos sumar NAZCA, CO2, etc. si cada uno tiene su propio script
-    return "";
-  }
+ function getScriptUrlForOrigen(origen){
+  const o = String(origen || "").toUpperCase().trim();
+
+  if (o === "SARMIENTO") return SCRIPT_URL_SARMIENTO;
+  if (o === "AV2")       return SCRIPT_URL_AV2;
+  if (o === "PUEYRREDON") return SCRIPT_URL_PUEYRREDON;
+
+  // Si aún no hay script asignado para otros locales:
+  return "";
+}
 
   function enviarArchivoAGoogleDrive({ content, fileName, folderName }){
     const origen = el.origenSelect?.value || "";
