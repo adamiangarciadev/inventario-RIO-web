@@ -3,7 +3,7 @@
   "use strict";
 
   // ====== Config ======
-  const RESPONSABLES = ["DAVID","DIEGO","JOEL","MARTIN","MIGUEL","NAHUEL","RICARDO","RODRIGO"];
+  const RESPONSABLES = ["DAVID","DIEGO","JOEL","MARTIN","MIGUEL","NAHUEL","RODRIGO","RAMON","ROBERTO","SERGIO","PATO"];
   const SUCURSALES  = ["AV2","NAZCA","LAMARCA","CORRIENTES","CO2","CASTELLI","QUILMES","MORENO","SARMIENTO","DEPOSITO","PUEYRREDON"];
   const CSV_FILES   = ["equivalencia.csv", "equivalencia2.csv"]; // ambos si existen
   const LS_META  = "pickeo_meta_v1";
@@ -16,8 +16,8 @@
 
   // AV2
   const SCRIPT_URL_AV2 = "https://script.google.com/macros/s/AKfycbwPNl9zyKtgun43MijeiFL3BtGTyM79_a4pocTYlYOr9Q5KllWra6s2HjbGIr11XFGy9w/exec";
-  // PUYERREDON
-  const SCRIPT_URL_PUYERREDON = "https://script.google.com/macros/s/AKfycbxKRHA79kv30UEjOU_eeehr8evuVPhqDFfSaanJgeJPgUSEZao5eLqsTyO73CdLvgZE/exec";
+  // PUEYRREDON
+  const SCRIPT_URL_PUEYRREDON = "https://script.google.com/macros/s/AKfycbxKRHA79kv30UEjOU_eeehr8evuVPhqDFfSaanJgeJPgUSEZao5eLqsTyO73CdLvgZE/exec";
 
   // ====== Estado ======
   let rows = [];
@@ -308,7 +308,7 @@
     const o = String(origen || "").toUpperCase().trim();
     if (o === "SARMIENTO") return SCRIPT_URL_SARMIENTO;
     if (o === "AV2")       return SCRIPT_URL_AV2;
-    if (o === "PUYERREDON") return SCRIPT_URL_PUYERREDON;
+    if (o === "PUEYRREDON") return SCRIPT_URL_PUEYRREDON;
     // acá después podemos sumar NAZCA, CO2, etc. si cada uno tiene su propio script
     return "";
   }
